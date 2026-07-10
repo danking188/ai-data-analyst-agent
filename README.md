@@ -1,3 +1,19 @@
+---
+domain:
+  - AutoML
+tags:
+  - data-analysis
+  - fastapi
+  - react
+  - evidence
+datasets:
+  evaluation:
+  test:
+  train:
+models:
+license: apache-2.0
+---
+
 # AI Data Analyst Agent
 
 面向 CSV、Excel 和 Parquet 的证据优先数据分析工作流系统。项目采用
@@ -101,3 +117,9 @@ docker compose --env-file .env.deploy up --build
 - 产品文档和设计资源统一放在 `docs/product/`、`docs/design/`。
 - 可重复执行的工具放在 `scripts/`，不要在根目录堆放临时脚本。
 - 构建产物、虚拟环境、依赖目录和缓存不得提交。
+
+## ModelScope Clone
+
+```bash
+git clone https://www.modelscope.cn/studios/Ascano/ai-data-analyst-agent.git
+```
