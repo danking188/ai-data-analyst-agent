@@ -88,6 +88,15 @@ platform's Docker build prerequisites. Uploaded data and generated artifacts use
 `/mnt/workspace/data`; use an external database and object storage for stronger
 durability guarantees.
 
+Current production deployment:
+
+- Studio: `https://www.modelscope.cn/studios/Ascano/ai-data-analyst-agent`
+- Application: `https://ascano-ai-data-analyst-agent.ms.show`
+- Visibility: public Studio endpoint with application-level JWT authentication
+- Storage: SQLite, datasets, and generated artifacts under `/mnt/workspace/data`
+- Verified: health, login, authenticated capabilities, CSV ingestion, full
+  analysis run, and artifact persistence within the active Studio workspace
+
 Build and test the single-container image locally:
 
 ```bash

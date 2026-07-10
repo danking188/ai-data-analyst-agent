@@ -261,4 +261,4 @@ BE-001 → BE-002 → BE-003 → BE-005 → BE-006 → BE-101
 | PROD-003 | [x] | 单容器生产镜像 | 根 Dockerfile 在 7860 同时提供前端与 API |
 | PROD-004 | [x] | 真实数据端到端验收 | CSV 上传、AnalysisSpec、Run、Artifact、Claim、HTML 下载贯通 |
 | PROD-005 | [x] | 桌面和移动端浏览器验收 | 无控制台错误；390px 无横向溢出；抽屉不遮挡正文 |
-| PROD-006 | [!] | 发布 ModelScope 创空间 | 阻塞：需要 `MODELSCOPE_API_TOKEN` 和 Docker 创空间账号条件 |
+| PROD-006 | [x] | 发布 ModelScope 创空间 | Docker 创空间构建并运行；健康检查、登录和真实 CSV 全流程 Smoke 验收通过 |
