@@ -23,6 +23,26 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserRow(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'disabled')", name="ck_users_status"),
+        UniqueConstraint("username", name="uq_users_username"),
+        Index("ix_users_status_created_at", "status", "created_at"),
+    )
+
+    user_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    username: Mapped[str] = mapped_column(String(120), nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    password_updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+
+
 class ProjectRow(Base):
     __tablename__ = "projects"
     __table_args__ = (

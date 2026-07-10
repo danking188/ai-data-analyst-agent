@@ -80,6 +80,11 @@ export const mockApi = {
     return { subject_id: username, expires_in_seconds: 43_200 };
   },
 
+  async register(username: string) {
+    await wait();
+    return { subject_id: username.trim().toLowerCase(), expires_in_seconds: 43_200 };
+  },
+
   async getSession() {
     await wait(20);
     return { subject_id: "demo-analyst", expires_in_seconds: null };

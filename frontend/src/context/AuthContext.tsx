@@ -25,6 +25,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apiClient.login(username, password),
     onSuccess: (session) => queryClient.setQueryData(sessionKey, session),
   });
+  const registerMutation = useMutation({
+    mutationFn: ({ username, password }: { username: string; password: string }) =>
+      apiClient.register(username, password),
+    onSuccess: (session) => queryClient.setQueryData(sessionKey, session),
+  });
   const logoutMutation = useMutation({
     mutationFn: apiClient.logout,
     onSuccess: () => queryClient.removeQueries({ queryKey: sessionKey }),
@@ -38,9 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (!value) {
     return (
       <LoginPage
-        error={loginMutation.error}
-        loading={loginMutation.isPending}
-        onSubmit={(username, password) => loginMutation.mutate({ username, password })}
+        loginError={loginMutation.error}
+        registerError={registerMutation.error}
+        loading={loginMutation.isPending || registerMutation.isPending}
+        onLogin={(username, password) => loginMutation.mutate({ username, password })}
+        onRegister={(username, password) => registerMutation.mutate({ username, password })}
       />
     );
   }

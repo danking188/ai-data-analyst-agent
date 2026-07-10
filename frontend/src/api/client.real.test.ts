@@ -16,6 +16,28 @@ afterEach(() => {
 });
 
 describe("apiClient real mode contract calls", () => {
+  it("registers a persistent account through the public auth route", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { subject_id: "new-user", expires_in_seconds: 43_200 },
+        { status: 201 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { apiClient } = await loadRealClient();
+    await apiClient.register("new-user", "safe-password-2026");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api.test/api/v1/auth/register",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ username: "new-user", password: "safe-password-2026" }),
+        credentials: "include",
+      }),
+    );
+  });
+
   it("activates a dataset version through the dataset-scoped route", async () => {
     const version: DatasetVersion = {
       version_id: "dsv_1",

@@ -16,6 +16,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.persistence.session import get_database
 from app.persistence.unit_of_work import UnitOfWork
+from app.services.accounts import AccountService
 from app.services.jobs import JobService
 from app.static import SPAStaticFiles
 
@@ -29,6 +30,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session = database.session()
     try:
         with UnitOfWork(session):
+            settings = get_settings()
+            if settings.auth_mode == "jwt":
+                AccountService(session).ensure_bootstrap_user(
+                    username=settings.login_username,
+                    password=settings.login_password,
+                )
             recovered = JobService(session).recover_stale()
             if recovered:
                 logger.warning("recovered %s stale jobs", recovered)

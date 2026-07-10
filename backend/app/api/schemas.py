@@ -49,6 +49,11 @@ class LoginRequest(StrictModel):
     password: str = Field(min_length=1, max_length=500)
 
 
+class RegisterRequest(StrictModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=12, max_length=128)
+
+
 class SessionInfo(BaseModel):
     subject_id: str
     expires_in_seconds: int | None = Field(default=None, ge=1)

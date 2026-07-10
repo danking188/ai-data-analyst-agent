@@ -68,6 +68,7 @@ Required runtime secrets:
 - `LOGIN_USERNAME`: the account shown on the login page.
 - `LOGIN_PASSWORD`: a strong password stored only in the platform secret manager.
 - `JWT_SECRET`: at least 32 random bytes used to sign login and download tokens.
+- `REGISTRATION_ENABLED`: set to `true` to allow persistent self-service accounts.
 
 Startup deliberately fails when `LOGIN_PASSWORD` or `JWT_SECRET` is missing,
 too short, or still uses an example placeholder.
@@ -77,6 +78,7 @@ Recommended runtime values for ModelScope Studio:
 ```text
 APP_ENV=production
 AUTH_MODE=jwt
+REGISTRATION_ENABLED=true
 DATA_ROOT=/mnt/workspace/data
 DATABASE_URL=sqlite:////mnt/workspace/data/app.db
 SESSION_COOKIE_SECURE=true

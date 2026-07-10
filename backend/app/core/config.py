@@ -32,6 +32,7 @@ class Settings:
     jwt_issuer: str
     login_username: str
     login_password: str
+    registration_enabled: bool
     session_cookie_name: str
     session_cookie_secure: bool
     session_ttl_seconds: int
@@ -59,6 +60,8 @@ def get_settings() -> Settings:
         jwt_issuer=os.getenv("JWT_ISSUER", "ai-data-analyst"),
         login_username=os.getenv("LOGIN_USERNAME", "analyst"),
         login_password=os.getenv("LOGIN_PASSWORD", ""),
+        registration_enabled=os.getenv("REGISTRATION_ENABLED", "true").lower()
+        in {"1", "true", "yes"},
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "datatrace_session"),
         session_cookie_secure=os.getenv("SESSION_COOKIE_SECURE", "false").lower()
         in {"1", "true", "yes"},

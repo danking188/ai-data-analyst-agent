@@ -99,7 +99,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </button>
         <div className="user-row">
           <span className="avatar">DA</span>
-          <span>
+          <span className="user-row__identity">
             <strong>{auth?.session.subject_id ?? "Data Analyst"}</strong>
             <small>{apiClient.mode === "mock" ? "Mock workspace" : "Connected"}</small>
           </span>

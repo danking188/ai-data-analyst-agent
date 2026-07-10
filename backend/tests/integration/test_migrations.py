@@ -15,6 +15,7 @@ def test_initial_migration_creates_foundation_tables(app_client) -> None:
         "jobs",
         "idempotency_keys",
         "audit_logs",
+        "users",
         "alembic_version",
     }.issubset(set(inspector.get_table_names()))
 

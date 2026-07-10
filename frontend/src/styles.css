@@ -219,6 +219,7 @@ dt {
 }
 
 .avatar {
+  flex: 0 0 31px;
   width: 31px;
   height: 31px;
   display: grid;
@@ -230,19 +231,29 @@ dt {
   font-weight: 750;
 }
 
-.user-row > span:last-child {
+.user-row__identity {
+  flex: 1 1 auto;
   min-width: 0;
   display: grid;
   gap: 1px;
 }
 
 .user-row strong {
+  display: block;
+  overflow: hidden;
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-row small {
+  display: block;
   color: var(--muted);
   font-size: 10px;
+}
+
+.user-row > .icon-button {
+  flex: 0 0 auto;
 }
 
 .app-main {
@@ -343,6 +354,37 @@ dt {
 
 .login-brand strong {
   font-size: 18px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dce1e8;
+  border-radius: 7px;
+  background: #f4f6f9;
+}
+
+.auth-tabs button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.auth-tabs button[aria-selected="true"] {
+  color: var(--ink);
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(24 35 52 / 10%);
 }
 
 .login-heading {

@@ -75,6 +75,14 @@ export const apiClient = {
     });
   },
 
+  register(username: string, password: string): Promise<SessionInfo> {
+    if (API_MODE === "mock") return mockApi.register(username);
+    return request("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+  },
+
   getSession(): Promise<SessionInfo> {
     if (API_MODE === "mock") return mockApi.getSession();
     return request("/auth/session");

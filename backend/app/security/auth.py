@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, Any
@@ -57,13 +56,6 @@ def authenticate(
     if not isinstance(subject, str) or not subject:
         raise _auth_error("登录凭证缺少主体")
     return Principal(subject_id=subject)
-
-
-def verify_login(username: str, password: str, settings: Settings) -> bool:
-    return hmac.compare_digest(username, settings.login_username) and hmac.compare_digest(
-        password,
-        settings.login_password,
-    )
 
 
 def create_session_token(subject_id: str, settings: Settings) -> tuple[str, int]:

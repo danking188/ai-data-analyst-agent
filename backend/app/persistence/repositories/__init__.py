@@ -16,6 +16,7 @@ from app.persistence.repositories.projects import Page, ProjectRepository
 from app.persistence.repositories.quality import QualityIssueRepository
 from app.persistence.repositories.runs import AnalysisRunRepository
 from app.persistence.repositories.schemas import ColumnSchemaRepository
+from app.persistence.repositories.users import UserRepository
 
 __all__ = [
     "AnalysisSpecRepository",
@@ -33,5 +34,6 @@ __all__ = [
     "Page",
     "ProjectRepository",
     "QualityIssueRepository",
+    "UserRepository",
     "canonical_request_hash",
 ]

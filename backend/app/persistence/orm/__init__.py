@@ -7,6 +7,7 @@ from app.persistence.orm.models import (
     JobRow,
     ProjectMemberRow,
     ProjectRow,
+    UserRow,
 )
 from app.persistence.orm.workflow_models import (
     AnalysisRunRow,
@@ -45,5 +46,6 @@ __all__ = [
     "ProjectRow",
     "QualityIssueRow",
     "UserDecisionRow",
+    "UserRow",
     "ValidationResultRow",
 ]

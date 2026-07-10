@@ -109,6 +109,8 @@ docker compose --env-file .env.deploy up --build
 登录页、React 前端、FastAPI API 和报告下载，并将运行数据写入
 `/mnt/workspace/data`。生产环境必须配置 `LOGIN_USERNAME`、`LOGIN_PASSWORD`
 和不少于 32 个字符的 `JWT_SECRET`；前端不再包含开发 token。
+设置 `REGISTRATION_ENABLED=true` 后，注册账号以 Scrypt 哈希写入持久化数据库，
+不同账号的项目和数据按项目成员关系隔离。
 
 ## 目录维护规则
 

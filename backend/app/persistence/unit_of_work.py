@@ -17,6 +17,7 @@ from app.persistence.repositories import (
     JobRepository,
     ProjectRepository,
     QualityIssueRepository,
+    UserRepository,
 )
 
 
@@ -24,6 +25,7 @@ class UnitOfWork:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.projects = ProjectRepository(session)
+        self.users = UserRepository(session)
         self.analysis_specs = AnalysisSpecRepository(session)
         self.runs = AnalysisRunRepository(session)
         self.datasets = DatasetRepository(session)

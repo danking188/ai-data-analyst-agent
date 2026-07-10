@@ -6,6 +6,9 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.security.passwords import verify_password
 
 
 def test_jwt_login_cookie_session_and_logout(
@@ -64,6 +67,63 @@ def test_jwt_login_cookie_session_and_logout(
         logged_out = client.post("/api/v1/auth/logout")
         assert logged_out.status_code == 204
         assert client.get("/api/v1/auth/session").status_code == 401
+
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"username": "New.User", "password": "safe-password-2026"},
+        )
+        assert registered.status_code == 201
+        assert registered.json()["subject_id"] == "new.user"
+        assert "datatrace_session=" in registered.headers["set-cookie"]
+
+        projects = client.get("/api/v1/projects")
+        assert projects.status_code == 200
+        assert projects.json()["total"] == 0
+
+        duplicate = client.post(
+            "/api/v1/auth/register",
+            json={"username": "new.user", "password": "another-password-2026"},
+        )
+        assert duplicate.status_code == 409
+        assert duplicate.json()["error"]["code"] == "USERNAME_TAKEN"
+
+        from app.persistence.orm import UserRow
+
+        session = get_database().session()
+        try:
+            stored = session.scalar(select(UserRow).where(UserRow.username == "new.user"))
+            assert stored is not None
+            assert stored.password_hash.startswith("scrypt$")
+            assert "safe-password-2026" not in stored.password_hash
+            assert verify_password("safe-password-2026", stored.password_hash)
+            assert not verify_password(
+                "safe-password-2026",
+                stored.password_hash.replace("$16384$", "$32768$"),
+            )
+            assert stored.last_login_at is None
+        finally:
+            session.close()
+
+    with TestClient(create_app()) as restarted_client:
+        persisted_login = restarted_client.post(
+            "/api/v1/auth/login",
+            json={"username": "NEW.USER", "password": "safe-password-2026"},
+        )
+        assert persisted_login.status_code == 200
+        assert persisted_login.json()["subject_id"] == "new.user"
+
+        for _ in range(5):
+            failed = restarted_client.post(
+                "/api/v1/auth/login",
+                json={"username": "analyst", "password": "wrong-password"},
+            )
+            assert failed.status_code == 401
+        locked = restarted_client.post(
+            "/api/v1/auth/login",
+            json={"username": "analyst", "password": "test-password"},
+        )
+        assert locked.status_code == 423
+        assert locked.json()["error"]["code"] == "ACCOUNT_LOCKED"
 
     get_database().engine.dispose()
     get_database.cache_clear()
