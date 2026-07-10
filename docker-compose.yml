@@ -1,0 +1,56 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    image: ai-data-analyst-backend:local
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      API_PREFIX: ${API_PREFIX:-/api/v1}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/app.db}
+      DATA_ROOT: ${DATA_ROOT:-./data}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-524288000}
+      AUTH_MODE: ${AUTH_MODE:-dev_token}
+      DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:-local-development-token}
+      JWT_SECRET: ${JWT_SECRET:-development-only-secret}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-ai-data-analyst}
+      JWT_ISSUER: ${JWT_ISSUER:-ai-data-analyst}
+      LOGIN_USERNAME: ${LOGIN_USERNAME:-analyst}
+      LOGIN_PASSWORD: ${LOGIN_PASSWORD:-}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-datatrace_session}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - backend-data:/app/data
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_API_MODE: ${VITE_API_MODE:-real}
+        VITE_DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:-local-development-token}
+    image: ai-data-analyst-frontend:local
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  backend-data:
