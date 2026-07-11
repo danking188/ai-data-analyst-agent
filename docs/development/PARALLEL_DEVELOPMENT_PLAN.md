@@ -263,5 +263,5 @@ BE-001 → BE-002 → BE-003 → BE-005 → BE-006 → BE-101
 | PROD-005 | [x] | 桌面和移动端浏览器验收 | 无控制台错误；390px 无横向溢出；抽屉不遮挡正文 |
 | PROD-006 | [x] | 发布 ModelScope 创空间 | Docker 创空间构建并运行；健康检查、登录和真实 CSV 全流程 Smoke 验收通过 |
 | PROD-007 | [x] | 持久化账号与开放注册 | 用户表迁移、Scrypt 密码哈希、失败锁定、账号隔离和注册 UI 验收通过 |
-| PROD-008 | [~] | 外部 PostgreSQL 与对象存储 | 适配器、就绪检查和本地测试完成；等待云端连接凭据执行跨部署验收 |
-| PROD-009 | [~] | 独立通用 Job Runner 与生产进程监督 | 七类异步 Job 由数据库队列领取；API/Worker 任一退出时容器可恢复；等待云端验收 |
+| PROD-008 | [x] | 外部 PostgreSQL 与对象存储 | PostgreSQL/S3 就绪检查通过；账号、项目和数据集跨部署保留；真实上传验收通过 |
+| PROD-009 | [x] | 独立通用 Job Runner 与生产进程监督 | 七类异步 Job 由数据库队列领取；线上任务完成 queued → running → succeeded 验收 |
