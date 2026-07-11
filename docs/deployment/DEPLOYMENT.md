@@ -79,16 +79,37 @@ Recommended runtime values for ModelScope Studio:
 APP_ENV=production
 AUTH_MODE=jwt
 REGISTRATION_ENABLED=true
-DATA_ROOT=/mnt/workspace/data
-DATABASE_URL=sqlite:////mnt/workspace/data/app.db
+DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+DATABASE_POOL_SIZE=5
+DATABASE_MAX_OVERFLOW=10
+DATABASE_POOL_RECYCLE_SECONDS=300
+REQUIRE_EXTERNAL_PERSISTENCE=true
+STORAGE_BACKEND=s3
+STORAGE_CACHE_ROOT=/tmp/datatrace-storage-cache
+S3_BUCKET=private-bucket
+S3_ENDPOINT_URL=https://s3-compatible-endpoint
+S3_REGION=auto
+S3_ACCESS_KEY_ID=secret
+S3_SECRET_ACCESS_KEY=secret
+S3_PREFIX=datatrace
+S3_FORCE_PATH_STYLE=true
+# Leave empty for Supabase Storage. Use AES256 only when the provider supports it.
+S3_SERVER_SIDE_ENCRYPTION=
 SESSION_COOKIE_SECURE=true
 PORT=7860
 ```
 
 ModelScope must use the Docker SDK, and the account must have completed the
-platform's Docker build prerequisites. Uploaded data and generated artifacts use
-`/mnt/workspace/data`; use an external database and object storage for stronger
-durability guarantees.
+platform's Docker build prerequisites. Production metadata uses external PostgreSQL;
+uploaded data and generated artifacts use private S3-compatible object storage. The
+container only keeps a disposable local cache under `STORAGE_CACHE_ROOT`.
+
+Release gates:
+
+- `GET /api/v1/health/ready` reports PostgreSQL and object storage as ready.
+- `alembic upgrade head` succeeds against PostgreSQL before Uvicorn starts.
+- A registered account can log in before and after a complete Studio redeployment.
+- An uploaded dataset and exported artifact can be read after the local cache is cleared.
 
 Current production deployment:
 

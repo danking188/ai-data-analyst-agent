@@ -5,10 +5,9 @@ import time
 
 from sqlalchemy import select
 
-from app.core.config import get_settings
 from app.persistence.orm.models import JobRow
 from app.persistence.session import get_database
-from app.storage.files import FileStorage
+from app.storage.files import get_file_storage
 from app.workers.ingestion import DatasetIngestionWorker
 
 
@@ -38,7 +37,7 @@ def main() -> None:
     args = parser.parse_args()
     worker = DatasetIngestionWorker(
         get_database(),
-        FileStorage(get_settings().data_root),
+        get_file_storage(),
         worker_id=args.worker_id,
     )
     if args.once:

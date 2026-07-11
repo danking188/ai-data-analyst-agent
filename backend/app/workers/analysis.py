@@ -12,7 +12,7 @@ from app.persistence.orm.workflow_models import AnalysisSpecRow, ArtifactRow, Co
 from app.persistence.repositories.jobs import JobRepository
 from app.persistence.session import Database, get_database
 from app.persistence.unit_of_work import UnitOfWork
-from app.storage.files import FileStorage
+from app.storage.files import FileStorage, get_file_storage
 
 
 class AnalysisRunWorker:
@@ -308,11 +308,9 @@ class AnalysisRunWorker:
 
 
 def process_analysis_run_job(job_id: str) -> None:
-    from app.core.config import get_settings
-
     AnalysisRunWorker(
         get_database(),
-        FileStorage(get_settings().data_root),
+        get_file_storage(),
         default_tool_registry,
         worker_id=f"local:{job_id}",
     ).run(job_id)

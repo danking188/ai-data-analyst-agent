@@ -60,6 +60,7 @@ def test_implemented_operation_ids_exist_in_shared_contract() -> None:
     assert implemented <= contract_operation_ids
     assert {
         "getHealth",
+        "getReadiness",
         "getCapabilities",
         "listProjects",
         "createProject",

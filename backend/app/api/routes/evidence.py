@@ -20,7 +20,7 @@ from app.persistence.unit_of_work import UnitOfWork
 from app.security.auth import Principal, authenticate
 from app.services.evidence import EvidenceService
 from app.services.idempotency import IdempotencyService, canonical_request_hash
-from app.storage.files import FileStorage
+from app.storage.files import get_file_storage
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["Evidence"])
 
@@ -176,7 +176,7 @@ def download_artifact_file(
     )
     result = artifact.result_json if isinstance(artifact.result_json, dict) else {}
     return FileResponse(
-        FileStorage(settings.data_root).resolve_key(str(artifact.storage_key)),
+        get_file_storage().resolve_key(str(artifact.storage_key)),
         media_type=result.get("content_type"),
         filename=str(result.get("file_name") or f"{artifact_id}.artifact"),
     )

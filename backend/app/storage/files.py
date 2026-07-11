@@ -4,8 +4,11 @@ import hashlib
 import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from functools import lru_cache
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 from fastapi import UploadFile
 
@@ -22,6 +25,18 @@ class StagedUpload:
     storage_key: str
     sha256: str
     size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class S3StorageConfig:
+    bucket: str
+    endpoint_url: str | None
+    region: str
+    access_key_id: str | None
+    secret_access_key: str | None
+    prefix: str = "datatrace"
+    force_path_style: bool = False
+    server_side_encryption: str | None = None
 
 
 class FileStorage:
@@ -76,6 +91,11 @@ class FileStorage:
 
     def remove_staged(self, job_id: str) -> None:
         shutil.rmtree(self._safe_path("tmp", job_id), ignore_errors=True)
+
+    def healthcheck(self) -> None:
+        self.data_root.mkdir(parents=True, exist_ok=True)
+        if not os.access(self.data_root, os.R_OK | os.W_OK | os.X_OK):
+            raise OSError("DATA_ROOT is not readable and writable")
 
     def resolve_key(self, storage_key: str) -> Path:
         candidate = self.data_root.joinpath(storage_key).resolve()
@@ -214,3 +234,207 @@ class FileStorage:
                 "文件内容与扩展名不匹配或文件已损坏",
                 422,
             )
+
+
+class S3FileStorage(FileStorage):
+    """S3-backed immutable storage with a local cache for dataframe tooling."""
+
+    def __init__(
+        self,
+        cache_root: Path,
+        config: S3StorageConfig,
+        *,
+        client: Any | None = None,
+    ) -> None:
+        super().__init__(cache_root)
+        self.config = config
+        if client is None:
+            import boto3
+            from botocore.config import Config
+
+            addressing_style = "path" if config.force_path_style else "auto"
+            client = boto3.client(
+                "s3",
+                endpoint_url=config.endpoint_url,
+                region_name=config.region,
+                aws_access_key_id=config.access_key_id,
+                aws_secret_access_key=config.secret_access_key,
+                config=Config(
+                    signature_version="s3v4",
+                    s3={"addressing_style": addressing_style},
+                ),
+            )
+        self.client = client
+
+    async def stage_upload(
+        self,
+        upload: UploadFile,
+        *,
+        job_id: str,
+        max_bytes: int,
+    ) -> StagedUpload:
+        staged = await super().stage_upload(upload, job_id=job_id, max_bytes=max_bytes)
+        try:
+            self._upload_path(staged.storage_key, super().resolve_key(staged.storage_key))
+        except Exception:
+            super().remove_staged(job_id)
+            self._delete_object(staged.storage_key)
+            raise
+        return staged
+
+    def remove_staged(self, job_id: str) -> None:
+        prefix = self._object_key(f"tmp/{job_id}").rstrip("/") + "/"
+        continuation_token: str | None = None
+        while True:
+            request: dict[str, Any] = {"Bucket": self.config.bucket, "Prefix": prefix}
+            if continuation_token:
+                request["ContinuationToken"] = continuation_token
+            response = self.client.list_objects_v2(**request)
+            objects = [{"Key": item["Key"]} for item in response.get("Contents", [])]
+            if objects:
+                self.client.delete_objects(
+                    Bucket=self.config.bucket,
+                    Delete={"Objects": objects, "Quiet": True},
+                )
+            if not response.get("IsTruncated"):
+                break
+            continuation_token = response.get("NextContinuationToken")
+        super().remove_staged(job_id)
+
+    def healthcheck(self) -> None:
+        super().healthcheck()
+        self.client.head_bucket(Bucket=self.config.bucket)
+
+    def resolve_key(self, storage_key: str) -> Path:
+        target = super().resolve_key(storage_key)
+        if target.exists():
+            return target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as handle:
+            temporary = Path(handle.name)
+        try:
+            self.client.download_file(
+                self.config.bucket,
+                self._object_key(storage_key),
+                str(temporary),
+            )
+            os.replace(temporary, target)
+            target.chmod(0o440)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+        return target
+
+    def commit_ingestion(
+        self,
+        *,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        source_path: Path,
+        parquet_path: Path,
+        source_type: str,
+    ) -> tuple[str, str]:
+        staged_key = source_path.relative_to(self.data_root).as_posix()
+        source_key, data_key = super().commit_ingestion(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            source_path=source_path,
+            parquet_path=parquet_path,
+            source_type=source_type,
+        )
+        self._upload_path(source_key, super().resolve_key(source_key))
+        self._upload_path(data_key, super().resolve_key(data_key))
+        if staged_key != source_key:
+            self._delete_object(staged_key)
+        return source_key, data_key
+
+    def commit_derived_parquet(
+        self,
+        *,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        parquet_path: Path,
+    ) -> str:
+        storage_key = super().commit_derived_parquet(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            parquet_path=parquet_path,
+        )
+        self._upload_path(storage_key, super().resolve_key(storage_key))
+        return storage_key
+
+    def write_artifact_file(
+        self,
+        *,
+        project_id: str,
+        artifact_id: str,
+        file_name: str,
+        content: bytes,
+    ) -> str:
+        storage_key = super().write_artifact_file(
+            project_id=project_id,
+            artifact_id=artifact_id,
+            file_name=file_name,
+            content=content,
+        )
+        self._upload_path(storage_key, super().resolve_key(storage_key))
+        return storage_key
+
+    def quarantine(self, job_id: str, source_path: Path) -> str | None:
+        source_key = source_path.relative_to(self.data_root).as_posix()
+        quarantine_key = super().quarantine(job_id, source_path)
+        if quarantine_key is not None:
+            self._upload_path(quarantine_key, super().resolve_key(quarantine_key))
+            self._delete_object(source_key)
+        return quarantine_key
+
+    def _upload_path(self, storage_key: str, path: Path) -> None:
+        extra_args: dict[str, str] = {}
+        if self.config.server_side_encryption:
+            extra_args["ServerSideEncryption"] = self.config.server_side_encryption
+        kwargs = {"ExtraArgs": extra_args} if extra_args else {}
+        self.client.upload_file(
+            str(path),
+            self.config.bucket,
+            self._object_key(storage_key),
+            **kwargs,
+        )
+
+    def _delete_object(self, storage_key: str) -> None:
+        self.client.delete_object(
+            Bucket=self.config.bucket,
+            Key=self._object_key(storage_key),
+        )
+
+    def _object_key(self, storage_key: str) -> str:
+        parts = PurePosixPath(storage_key).parts
+        if not parts or PurePosixPath(storage_key).is_absolute() or ".." in parts:
+            raise ValueError("invalid object storage key")
+        normalized = self._safe_path(*parts).relative_to(self.data_root).as_posix()
+        return f"{self.config.prefix}/{normalized}" if self.config.prefix else normalized
+
+
+@lru_cache(maxsize=1)
+def get_file_storage() -> FileStorage:
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if settings.storage_backend == "s3":
+        return S3FileStorage(
+            settings.storage_cache_root,
+            S3StorageConfig(
+                bucket=settings.s3_bucket,
+                endpoint_url=settings.s3_endpoint_url,
+                region=settings.s3_region,
+                access_key_id=settings.s3_access_key_id,
+                secret_access_key=settings.s3_secret_access_key,
+                prefix=settings.s3_prefix,
+                force_path_style=settings.s3_force_path_style,
+                server_side_encryption=settings.s3_server_side_encryption,
+            ),
+        )
+    return FileStorage(settings.data_root)

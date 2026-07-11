@@ -22,6 +22,17 @@ def test_health_is_public_and_contract_shaped(app_client: TestClient) -> None:
     assert response.headers["X-Request-Id"].startswith("req_")
 
 
+def test_readiness_checks_database_and_storage(app_client: TestClient) -> None:
+    response = app_client.get("/api/v1/health/ready")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "database": {"status": "ok", "backend": "sqlite"},
+        "object_storage": {"status": "ok", "backend": "local"},
+        "timestamp": response.json()["timestamp"],
+    }
+
+
 def test_capabilities_requires_bearer(
     app_client: TestClient,
     auth_headers: dict[str, str],

@@ -112,6 +112,10 @@ docker compose --env-file .env.deploy up --build
 设置 `REGISTRATION_ENABLED=true` 后，注册账号以 Scrypt 哈希写入持久化数据库，
 不同账号的项目和数据按项目成员关系隔离。
 
+生产环境支持外部 PostgreSQL 与 S3 兼容对象存储。设置 PostgreSQL
+`DATABASE_URL`、`STORAGE_BACKEND=s3` 和对应 `S3_*` 变量后，元数据、上传文件、
+数据版本和导出产物不再依赖容器磁盘。`/api/v1/health/ready` 会同时检查两项依赖。
+
 ## 目录维护规则
 
 - 业务代码只放在 `frontend/` 或 `backend/`。

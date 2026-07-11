@@ -29,6 +29,18 @@ class Health(BaseModel):
     timestamp: datetime
 
 
+class ReadinessDependency(BaseModel):
+    status: Literal["ok"]
+    backend: str
+
+
+class Readiness(BaseModel):
+    status: Literal["ready"]
+    database: ReadinessDependency
+    object_storage: ReadinessDependency
+    timestamp: datetime
+
+
 class PollingPolicy(BaseModel):
     initial_interval_ms: int
     steady_interval_ms: int

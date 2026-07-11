@@ -10,12 +10,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.15,<2",
+  "boto3>=1.38,<2",
   "fastapi>=0.115,<1",
   "openpyxl>=3.1,<4",
   "pandas>=2.2,<3",
   "pydantic>=2.10,<3",
   "pyarrow>=19,<24",
   "PyJWT>=2.10,<3",
+  "psycopg[binary]>=3.2,<4",
   "python-multipart>=0.0.20,<1",
   "sqlalchemy>=2.0.38,<3",
   "uvicorn[standard]>=0.34,<1",
@@ -55,7 +57,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["migrations"]
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "pyarrow.*"]
+module = ["boto3.*", "botocore.*", "pandas.*", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

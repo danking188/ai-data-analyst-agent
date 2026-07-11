@@ -59,6 +59,21 @@ paths:
                 $ref: "#/components/schemas/SystemCapabilities"
         default:
           $ref: "#/components/responses/Error"
+  /health/ready:
+    get:
+      tags: [System]
+      operationId: getReadiness
+      summary: 检查数据库和对象存储就绪状态
+      security: []
+      responses:
+        "200":
+          description: 关键依赖可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /auth/login:
     post:
       tags: [Auth]
@@ -1320,6 +1335,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: 数据库或对象存储暂时不可用
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     PreconditionFailed:
       description: 客户端资源版本已过期
       content:
@@ -1362,6 +1383,29 @@ components:
           enum: [ok, degraded]
         version:
           type: string
+        timestamp:
+          type: string
+          format: date-time
+    ReadinessDependency:
+      type: object
+      required: [status, backend]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        backend:
+          type: string
+    Readiness:
+      type: object
+      required: [status, database, object_storage, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        database:
+          $ref: "#/components/schemas/ReadinessDependency"
+        object_storage:
+          $ref: "#/components/schemas/ReadinessDependency"
         timestamp:
           type: string
           format: date-time

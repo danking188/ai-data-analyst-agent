@@ -14,7 +14,7 @@ from app.persistence.orm.workflow_models import ArtifactRow, ClaimRow
 from app.persistence.repositories.jobs import JobRepository
 from app.persistence.session import Database, get_database
 from app.persistence.unit_of_work import UnitOfWork
-from app.storage.files import FileStorage
+from app.storage.files import FileStorage, get_file_storage
 
 
 class ReportExportWorker:
@@ -404,10 +404,8 @@ class ReportExportWorker:
 
 
 def process_report_export_job(job_id: str) -> None:
-    from app.core.config import get_settings
-
     ReportExportWorker(
         get_database(),
-        FileStorage(get_settings().data_root),
+        get_file_storage(),
         worker_id=f"local:{job_id}",
     ).run(job_id)

@@ -41,7 +41,7 @@ from app.services.datasets import DatasetService
 from app.services.idempotency import IdempotencyService, canonical_request_hash
 from app.services.jobs import job_to_schema
 from app.services.preview import PreviewService
-from app.storage.files import FileStorage
+from app.storage.files import get_file_storage
 from app.workers.comparison import process_version_comparison_job
 from app.workers.ingestion import process_ingestion_job
 
@@ -101,7 +101,7 @@ async def upload_dataset(
         if not dataset_name:
             raise validation_error("dataset_name 不能为空")
     job_id = new_id("job_")
-    storage = FileStorage(settings.data_root)
+    storage = get_file_storage()
     staged = await storage.stage_upload(
         file,
         job_id=job_id,

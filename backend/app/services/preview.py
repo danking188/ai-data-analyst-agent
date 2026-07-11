@@ -14,13 +14,13 @@ from app.domain.errors import not_found, state_conflict, validation_error
 from app.persistence.orm.models import DatasetVersionRow
 from app.persistence.orm.workflow_models import ColumnSchemaRow
 from app.persistence.repositories.projects import ProjectRepository
-from app.storage.files import FileStorage
+from app.storage.files import get_file_storage
 
 
 class PreviewService:
     def __init__(self, session: Session, settings: Settings) -> None:
         self.session = session
-        self.storage = FileStorage(settings.data_root)
+        self.storage = get_file_storage()
         self.cursor = CursorCodec(settings.jwt_secret)
 
     def preview(

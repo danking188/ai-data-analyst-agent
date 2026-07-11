@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 检查数据库和对象存储就绪状态 */
+        get: operations["getReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -779,6 +796,19 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
         };
+        ReadinessDependency: {
+            /** @enum {string} */
+            status: "ok";
+            backend: string;
+        };
+        Readiness: {
+            /** @enum {string} */
+            status: "ready";
+            database: components["schemas"]["ReadinessDependency"];
+            object_storage: components["schemas"]["ReadinessDependency"];
+            /** Format: date-time */
+            timestamp: string;
+        };
         SystemCapabilities: {
             /** @example v1 */
             api_version: string;
@@ -1286,6 +1316,15 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
+        /** @description 数据库或对象存储暂时不可用 */
+        ServiceUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
         /** @description 客户端资源版本已过期 */
         PreconditionFailed: {
             headers: {
@@ -1407,6 +1446,27 @@ export interface operations {
                 };
             };
             default: components["responses"]["Error"];
+        };
+    };
+    getReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 关键依赖可用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Readiness"];
+                };
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     login: {

@@ -26,9 +26,11 @@ def app_client(
 
     from app.core.config import get_settings
     from app.persistence.session import get_database
+    from app.storage.files import get_file_storage
 
     get_database.cache_clear()
     get_settings.cache_clear()
+    get_file_storage.cache_clear()
 
     config = Config("alembic.ini")
     command.upgrade(config, "head")
@@ -43,6 +45,7 @@ def app_client(
     database.engine.dispose()
     get_database.cache_clear()
     get_settings.cache_clear()
+    get_file_storage.cache_clear()
     os.environ.pop("DATABASE_URL", None)
 
 

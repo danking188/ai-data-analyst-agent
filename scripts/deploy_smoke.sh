@@ -8,6 +8,7 @@ COOKIE_JAR="${COOKIE_JAR:-/tmp/datatrace-smoke-cookie.txt}"
 
 echo "Checking backend health at ${BACKEND_URL}/health"
 curl -fsS "${BACKEND_URL}/health" >/dev/null
+curl -fsS "${BACKEND_URL}/health/ready" >/dev/null
 
 echo "Checking authenticated backend capabilities"
 if [ -n "${LOGIN_USERNAME:-}" ] && [ -n "${LOGIN_PASSWORD:-}" ]; then
