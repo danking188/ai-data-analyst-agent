@@ -29,6 +29,7 @@ from app.workers.cleaning import (
     process_cleaning_execute_job,
     process_cleaning_preview_job,
 )
+from app.workers.dispatch import schedule_job
 
 router = APIRouter(prefix="/projects/{project_id}/cleaning-plans", tags=["Cleaning"])
 
@@ -186,7 +187,7 @@ def preview_cleaning_plan(
             response_status=202,
             response_json=job.model_dump(mode="json"),
         )
-        background_tasks.add_task(process_cleaning_preview_job, job.job_id)
+        schedule_job(background_tasks, process_cleaning_preview_job, job.job_id)
         return job
 
 
@@ -295,5 +296,5 @@ def execute_cleaning_plan(
             response_status=202,
             response_json=job.model_dump(mode="json"),
         )
-        background_tasks.add_task(process_cleaning_execute_job, job.job_id)
+        schedule_job(background_tasks, process_cleaning_execute_job, job.job_id)
         return job

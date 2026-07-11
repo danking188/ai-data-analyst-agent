@@ -25,6 +25,7 @@ from app.security.auth import Principal, authenticate
 from app.services.idempotency import IdempotencyService, canonical_request_hash
 from app.services.jobs import job_to_schema
 from app.services.quality import QualityService
+from app.workers.dispatch import schedule_job
 from app.workers.quality import process_quality_scan_job
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["Quality"])
@@ -101,7 +102,7 @@ def create_quality_scan(
             response_status=202,
             response_json=job.model_dump(mode="json"),
         )
-        background_tasks.add_task(process_quality_scan_job, job.job_id)
+        schedule_job(background_tasks, process_quality_scan_job, job.job_id)
         return job
 
 

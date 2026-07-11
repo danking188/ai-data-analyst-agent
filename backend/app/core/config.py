@@ -26,6 +26,7 @@ class Settings:
     database_max_overflow: int
     database_pool_recycle_seconds: int
     require_external_persistence: bool
+    job_execution_mode: str
     data_root: Path
     storage_backend: str
     storage_cache_root: Path
@@ -71,6 +72,7 @@ def get_settings() -> Settings:
             "REQUIRE_EXTERNAL_PERSISTENCE", "false"
         ).lower()
         in {"1", "true", "yes"},
+        job_execution_mode=os.getenv("JOB_EXECUTION_MODE", "background").lower(),
         data_root=Path(os.getenv("DATA_ROOT", "./data")).resolve(),
         storage_backend=os.getenv("STORAGE_BACKEND", "local").lower(),
         storage_cache_root=Path(
@@ -118,6 +120,8 @@ def get_settings() -> Settings:
         raise ValueError("DATABASE_POOL_RECYCLE_SECONDS must be positive")
     if settings.storage_backend not in {"local", "s3"}:
         raise ValueError("STORAGE_BACKEND must be local or s3")
+    if settings.job_execution_mode not in {"background", "worker"}:
+        raise ValueError("JOB_EXECUTION_MODE must be background or worker")
     if settings.storage_backend == "s3":
         if not settings.s3_bucket:
             raise ValueError("S3_BUCKET is required when STORAGE_BACKEND=s3")

@@ -115,6 +115,7 @@ docker compose --env-file .env.deploy up --build
 生产环境支持外部 PostgreSQL 与 S3 兼容对象存储。设置 PostgreSQL
 `DATABASE_URL`、`STORAGE_BACKEND=s3` 和对应 `S3_*` 变量后，元数据、上传文件、
 数据版本和导出产物不再依赖容器磁盘。`/api/v1/health/ready` 会同时检查两项依赖。
+生产镜像还会监督独立的数据库队列 Worker，避免长任务占用 API 请求进程。
 
 ## 目录维护规则
 

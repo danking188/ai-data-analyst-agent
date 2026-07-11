@@ -84,6 +84,7 @@ DATABASE_POOL_SIZE=5
 DATABASE_MAX_OVERFLOW=10
 DATABASE_POOL_RECYCLE_SECONDS=300
 REQUIRE_EXTERNAL_PERSISTENCE=true
+JOB_EXECUTION_MODE=worker
 STORAGE_BACKEND=s3
 STORAGE_CACHE_ROOT=/tmp/datatrace-storage-cache
 S3_BUCKET=private-bucket
@@ -98,6 +99,10 @@ S3_SERVER_SIDE_ENCRYPTION=
 SESSION_COOKIE_SECURE=true
 PORT=7860
 ```
+
+`JOB_EXECUTION_MODE=worker` keeps long-running work out of API request processes. The
+production entrypoint supervises both the API and the database-backed worker; queued jobs
+remain in PostgreSQL and can be claimed after restarts.
 
 ModelScope must use the Docker SDK, and the account must have completed the
 platform's Docker build prerequisites. Production metadata uses external PostgreSQL;

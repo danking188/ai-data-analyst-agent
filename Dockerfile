@@ -22,6 +22,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=production \
     API_PREFIX=/api/v1 \
     AUTH_MODE=jwt \
+    JOB_EXECUTION_MODE=worker \
     DATA_ROOT=/mnt/workspace/data \
     DATABASE_URL=sqlite:////mnt/workspace/data/app.db \
     FRONTEND_DIST_DIR=/app/frontend-dist \
@@ -36,4 +37,4 @@ RUN pip install --upgrade pip && pip install .
 COPY --from=frontend-build /build/frontend/dist ./frontend-dist
 
 EXPOSE 7860
-CMD ["sh", "-c", "mkdir -p ${DATA_ROOT} && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
+CMD ["python", "-m", "app.production"]

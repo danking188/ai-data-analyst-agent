@@ -16,6 +16,7 @@ from app.security.auth import Principal, authenticate
 from app.services.idempotency import IdempotencyService, canonical_request_hash
 from app.services.jobs import job_to_schema
 from app.services.reports import ReportService
+from app.workers.dispatch import schedule_job
 from app.workers.reports import process_report_export_job
 
 router = APIRouter(prefix="/projects/{project_id}/reports", tags=["Reports"])
@@ -73,5 +74,5 @@ def create_report_export(
             response_status=202,
             response_json=job.model_dump(mode="json"),
         )
-        background_tasks.add_task(process_report_export_job, job.job_id)
+        schedule_job(background_tasks, process_report_export_job, job.job_id)
         return job

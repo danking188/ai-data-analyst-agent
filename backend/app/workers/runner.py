@@ -1,50 +1,106 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import time
+from dataclasses import dataclass
+from typing import Protocol
 
 from sqlalchemy import select
 
+from app.analysis.tool_registry import default_tool_registry
 from app.persistence.orm.models import JobRow
-from app.persistence.session import get_database
-from app.storage.files import get_file_storage
+from app.persistence.session import Database, get_database
+from app.storage.files import FileStorage, get_file_storage
+from app.workers.analysis import AnalysisRunWorker
+from app.workers.cleaning import CleaningExecuteWorker, CleaningPreviewWorker
+from app.workers.comparison import VersionComparisonWorker
 from app.workers.ingestion import DatasetIngestionWorker
+from app.workers.quality import QualityScanWorker
+from app.workers.reports import ReportExportWorker
 
 
-def next_ingestion_job_id() -> str | None:
-    session = get_database().session()
+class JobWorker(Protocol):
+    def run(self, job_id: str) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class QueuedJob:
+    job_id: str
+    kind: str
+
+
+SUPPORTED_JOB_KINDS = (
+    "dataset_ingestion",
+    "quality_scan",
+    "cleaning_preview",
+    "cleaning_execute",
+    "analysis_run",
+    "version_comparison",
+    "report_export",
+)
+
+
+def next_queued_job(database: Database) -> QueuedJob | None:
+    session = database.session()
     try:
-        return session.scalar(
-            select(JobRow.job_id)
-            .where(JobRow.kind == "dataset_ingestion", JobRow.status == "queued")
+        row = session.execute(
+            select(JobRow.job_id, JobRow.kind)
+            .where(JobRow.kind.in_(SUPPORTED_JOB_KINDS), JobRow.status == "queued")
             .order_by(JobRow.created_at, JobRow.job_id)
             .limit(1)
-        )
+        ).one_or_none()
+        return QueuedJob(job_id=str(row.job_id), kind=str(row.kind)) if row else None
     finally:
         session.close()
 
 
-def run_once(worker: DatasetIngestionWorker) -> bool:
-    job_id = next_ingestion_job_id()
-    return worker.run(job_id) if job_id else False
+def build_workers(
+    database: Database,
+    storage: FileStorage,
+    *,
+    worker_id: str,
+) -> dict[str, JobWorker]:
+    return {
+        "dataset_ingestion": DatasetIngestionWorker(database, storage, worker_id=worker_id),
+        "quality_scan": QualityScanWorker(database, storage, worker_id=worker_id),
+        "cleaning_preview": CleaningPreviewWorker(database, storage, worker_id=worker_id),
+        "cleaning_execute": CleaningExecuteWorker(database, storage, worker_id=worker_id),
+        "analysis_run": AnalysisRunWorker(
+            database,
+            storage,
+            default_tool_registry,
+            worker_id=worker_id,
+        ),
+        "version_comparison": VersionComparisonWorker(
+            database, storage, worker_id=worker_id
+        ),
+        "report_export": ReportExportWorker(database, storage, worker_id=worker_id),
+    }
+
+
+def run_once(database: Database, workers: dict[str, JobWorker]) -> bool:
+    queued = next_queued_job(database)
+    return workers[queued.kind].run(queued.job_id) if queued else False
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--worker-id", default="local-ingestion-worker")
+    parser.add_argument("--worker-id", default=f"{socket.gethostname()}-worker")
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     args = parser.parse_args()
-    worker = DatasetIngestionWorker(
-        get_database(),
+    database = get_database()
+    workers = build_workers(
+        database,
         get_file_storage(),
         worker_id=args.worker_id,
     )
     if args.once:
-        run_once(worker)
+        run_once(database, workers)
         return
     while True:
-        if not run_once(worker):
+        if not run_once(database, workers):
             time.sleep(max(args.poll_seconds, 0.1))
 
 

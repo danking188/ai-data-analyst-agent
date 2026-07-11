@@ -43,6 +43,7 @@ from app.services.jobs import job_to_schema
 from app.services.preview import PreviewService
 from app.storage.files import get_file_storage
 from app.workers.comparison import process_version_comparison_job
+from app.workers.dispatch import schedule_job
 from app.workers.ingestion import process_ingestion_job
 
 router = APIRouter(prefix="/projects/{project_id}/datasets", tags=["Datasets"])
@@ -174,7 +175,7 @@ async def upload_dataset(
                 response_status=202,
                 response_json=job.model_dump(mode="json"),
             )
-            background_tasks.add_task(process_ingestion_job, job.job_id)
+            schedule_job(background_tasks, process_ingestion_job, job.job_id)
             return job
     except Exception:
         storage.remove_staged(job_id)
@@ -359,7 +360,7 @@ def compare_dataset_versions(
             response_status=202,
             response_json=job.model_dump(mode="json"),
         )
-        background_tasks.add_task(process_version_comparison_job, job.job_id)
+        schedule_job(background_tasks, process_version_comparison_job, job.job_id)
         return job
 
 
