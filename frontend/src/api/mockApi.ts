@@ -303,6 +303,42 @@ export const mockApi = {
     plan.status = "awaiting_approval";
     plan.preview_artifact_id = "art_preview_cleaning";
     plan.revision += 1;
+    const existing = artifacts.find((item) => item.artifact_id === plan.preview_artifact_id);
+    if (!existing) {
+      artifacts.unshift({
+        artifact_id: plan.preview_artifact_id,
+        project_id: plan.project_id,
+        run_id: null,
+        dataset_version_id: plan.source_version_id,
+        type: "table",
+        name: "清洗影响预览",
+        producer: "cleaning.preview",
+        producer_version: "1.0.0",
+        status: "ready",
+        parameters: { cleaning_plan_id: plan.plan_id },
+        result: {
+          cleaning_plan_id: plan.plan_id,
+          source_version_id: plan.source_version_id,
+          row_count_before: 82310,
+          row_count_after: 82298,
+          column_count_before: seedColumns.length,
+          column_count_after: seedColumns.length + 1,
+          operations: plan.operations.map((operation) => ({
+            operation_id: operation.operation_id,
+            operation: operation.operation,
+            affected_rows: operation.estimated_affected_rows,
+            row_count_before: 82310,
+            row_count_after: operation.operation === "drop_duplicates" ? 82298 : 82310,
+          })),
+          sample_before: seedRows.slice(0, 3),
+          sample_after: seedRows.slice(0, 3).map((row) => ({ ...row, income_was_missing: false })),
+        },
+        preview: null,
+        checksum: `sha256:${"c".repeat(64)}`,
+        downloadable: false,
+        created_at: new Date().toISOString(),
+      });
+    }
     return createJob("cleaning_preview", "计算确定性影响预览", "cleaning_plan", planId);
   },
 

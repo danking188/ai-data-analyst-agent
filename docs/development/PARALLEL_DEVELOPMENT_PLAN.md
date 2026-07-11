@@ -265,3 +265,4 @@ BE-001 → BE-002 → BE-003 → BE-005 → BE-006 → BE-101
 | PROD-007 | [x] | 持久化账号与开放注册 | 用户表迁移、Scrypt 密码哈希、失败锁定、账号隔离和注册 UI 验收通过 |
 | PROD-008 | [x] | 外部 PostgreSQL 与对象存储 | PostgreSQL/S3 就绪检查通过；账号、项目和数据集跨部署保留；真实上传验收通过 |
 | PROD-009 | [x] | 独立通用 Job Runner 与生产进程监督 | 七类异步 Job 由数据库队列领取；线上任务完成 queued → running → succeeded 验收 |
+| PROD-010 | [x] | 清洗页面真实数据化 | Schema、预览 Artifact、影响行数和版本信息均来自真实接口；桌面和 390px 浏览器验收通过 |

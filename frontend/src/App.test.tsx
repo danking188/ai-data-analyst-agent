@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import App from "./App";
@@ -50,5 +50,30 @@ describe("App", () => {
     );
 
     expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument();
+  });
+
+  it("renders cleaning controls from schema and version data", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/quality/cleaning"]}>
+          <ToastProvider>
+            <AppProvider>
+              <App />
+            </AppProvider>
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect((await screen.findAllByRole("option", { name: "customer_id" })).length).toBeGreaterThan(0);
+    const resultSection = screen.getByRole("heading", { name: "执行与结果" }).closest("section");
+    expect(resultSection).not.toBeNull();
+    expect(within(resultSection!).getByText("v3")).toBeInTheDocument();
+    expect(within(resultSection!).getByText("82,310 行")).toBeInTheDocument();
+    expect(screen.queryByText("CUST-001")).not.toBeInTheDocument();
+    expect(screen.getByText("生成预览后显示真实样本差异。")).toBeInTheDocument();
   });
 });
