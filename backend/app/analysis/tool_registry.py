@@ -6,11 +6,29 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+from scipy import stats
 
+from app.analysis.modeling import train_and_compare
 from app.analysis.sandbox import validate_tool_context
 from app.domain.errors import state_conflict
 
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _benjamini_hochberg(rows: list[dict[str, Any]]) -> None:
+    eligible = [
+        (index, float(row["p_value"]))
+        for index, row in enumerate(rows)
+        if isinstance(row.get("p_value"), (int, float))
+        and math.isfinite(float(row["p_value"]))
+    ]
+    total = len(eligible)
+    adjusted = 1.0
+    for rank, (index, p_value) in reversed(
+        list(enumerate(sorted(eligible, key=lambda item: item[1]), start=1))
+    ):
+        adjusted = min(adjusted, p_value * total / rank)
+        rows[index]["q_value_bh"] = round(adjusted, 6)
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +188,180 @@ def profile_eda(context: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    analysis_spec = dict(context.get("analysis_spec", {}))
+    target = str(analysis_spec.get("target") or "")
+    target_diagnostics: dict[str, Any] = {
+        "target": target or None,
+        "task": analysis_spec.get("task"),
+        "available": bool(target and target in safe_frame.columns),
+    }
+    relationship_rows: list[dict[str, Any]] = []
+    statistical_tests: list[dict[str, Any]] = []
+    numeric_safe = safe_frame.select_dtypes(include="number")
+    correlation_rows: list[dict[str, Any]] = []
+    if len(numeric_safe.columns) >= 2:
+        correlation = numeric_safe.iloc[:, :30].corr(method="spearman", min_periods=3)
+        for left_index, left in enumerate(correlation.columns):
+            for right in correlation.columns[left_index + 1 :]:
+                value = correlation.loc[left, right]
+                if pd.notna(value):
+                    correlation_rows.append(
+                        {
+                            "left": str(left),
+                            "right": str(right),
+                            "spearman": round(float(value), 6),
+                        }
+                    )
+        correlation_rows.sort(key=lambda row: abs(float(row["spearman"])), reverse=True)
+    if target and target in safe_frame.columns:
+        target_series = safe_frame[target]
+        target_diagnostics["missing_count"] = int(target_series.isna().sum())
+        target_diagnostics["non_missing_count"] = int(target_series.notna().sum())
+        if "classification" in str(analysis_spec.get("task")):
+            counts = target_series.dropna().astype(str).value_counts()
+            total = int(counts.sum())
+            distribution = [
+                {
+                    "class": str(label),
+                    "count": int(count),
+                    "rate": round(float(count) / total, 6) if total else 0.0,
+                }
+                for label, count in counts.items()
+            ]
+            target_diagnostics.update(
+                class_count=len(counts),
+                distribution=distribution,
+                imbalance_ratio=(
+                    round(float(counts.max() / counts.min()), 6)
+                    if len(counts) > 1 and int(counts.min()) > 0
+                    else None
+                ),
+            )
+            charts.append(
+                {
+                    "chart_id": "target_distribution",
+                    "title": f"目标 {target} 类别分布",
+                    "chart_type": "bar",
+                    "encoding": {"x": "class", "y": "count"},
+                    "data": distribution,
+                }
+            )
+            for column in numeric_columns[:10]:
+                pair = safe_frame[[column, target]].dropna()
+                grouped = pair.groupby(target)[column].mean()
+                for label, value in grouped.items():
+                    relationship_rows.append(
+                        {
+                            "feature": column,
+                            "group": str(label),
+                            "measure": "mean",
+                            "value": round(float(value), 6),
+                        }
+                    )
+                groups = [
+                    pd.to_numeric(group[column], errors="coerce").dropna().to_numpy()
+                    for _, group in pair.groupby(target)
+                ]
+                groups = [group for group in groups if len(group) >= 2]
+                if len(groups) == 2:
+                    test = stats.mannwhitneyu(groups[0], groups[1], alternative="two-sided")
+                    effect = 1 - (2 * float(test.statistic)) / (len(groups[0]) * len(groups[1]))
+                    statistical_tests.append(
+                        {
+                            "feature": column,
+                            "test": "mann_whitney_u",
+                            "statistic": round(float(test.statistic), 6),
+                            "p_value": round(float(test.pvalue), 6),
+                            "effect_size": round(effect, 6),
+                            "effect_size_name": "rank_biserial",
+                        }
+                    )
+                elif len(groups) > 2:
+                    test = stats.kruskal(*groups)
+                    sample_count = sum(len(group) for group in groups)
+                    effect = max(
+                        0.0,
+                        (float(test.statistic) - len(groups) + 1)
+                        / max(sample_count - len(groups), 1),
+                    )
+                    statistical_tests.append(
+                        {
+                            "feature": column,
+                            "test": "kruskal_wallis",
+                            "statistic": round(float(test.statistic), 6),
+                            "p_value": round(float(test.pvalue), 6),
+                            "effect_size": round(effect, 6),
+                            "effect_size_name": "epsilon_squared",
+                        }
+                    )
+            for column in categorical_columns[:10]:
+                contingency = pd.crosstab(safe_frame[column], target_series)
+                if contingency.shape[0] > 1 and contingency.shape[1] > 1:
+                    chi2, p_value, _, _ = stats.chi2_contingency(contingency)
+                    denominator = int(contingency.to_numpy().sum()) * min(
+                        contingency.shape[0] - 1, contingency.shape[1] - 1
+                    )
+                    statistical_tests.append(
+                        {
+                            "feature": column,
+                            "test": "chi_square",
+                            "statistic": round(float(chi2), 6),
+                            "p_value": round(float(p_value), 6),
+                            "effect_size": round(math.sqrt(float(chi2) / denominator), 6),
+                            "effect_size_name": "cramers_v",
+                        }
+                    )
+        elif analysis_spec.get("task") == "regression":
+            numeric_target = pd.to_numeric(target_series, errors="coerce")
+            target_diagnostics.update(
+                mean=_json_safe(float(numeric_target.mean())),
+                std=_json_safe(float(numeric_target.std())),
+                median=_json_safe(float(numeric_target.median())),
+                skew=_json_safe(float(numeric_target.skew())),
+            )
+            for column in numeric_columns[:20]:
+                if column == target:
+                    continue
+                pair = pd.concat(
+                    [pd.to_numeric(safe_frame[column], errors="coerce"), numeric_target], axis=1
+                ).dropna()
+                if len(pair) >= 3:
+                    test = stats.spearmanr(pair.iloc[:, 0], pair.iloc[:, 1])
+                    statistic = float(test.statistic)
+                    p_value = float(test.pvalue)
+                    if math.isfinite(statistic) and math.isfinite(p_value):
+                        relationship_rows.append(
+                            {
+                                "feature": column,
+                                "measure": "spearman_with_target",
+                                "value": round(statistic, 6),
+                            }
+                        )
+                        statistical_tests.append(
+                            {
+                                "feature": column,
+                                "test": "spearman_correlation",
+                                "statistic": round(statistic, 6),
+                                "p_value": round(p_value, 6),
+                                "effect_size": round(statistic, 6),
+                                "effect_size_name": "spearman_rho",
+                            }
+                        )
+            relationship_rows.sort(key=lambda row: abs(float(row["value"])), reverse=True)
+
+    _benjamini_hochberg(statistical_tests)
+
+    duplicate_rows = int(frame.duplicated().sum())
+    health_warnings = []
+    if duplicate_rows:
+        health_warnings.append(f"检测到 {duplicate_rows} 条完全重复记录")
+    if target_diagnostics.get("imbalance_ratio") and float(
+        target_diagnostics["imbalance_ratio"]
+    ) >= 3:
+        health_warnings.append("目标类别不平衡，模型评估应优先关注 PR-AUC、召回率与 F1")
+    if target_diagnostics.get("missing_count"):
+        health_warnings.append("目标字段包含缺失值，建模时将排除这些记录")
+
     return {
         "artifacts": [
             {
@@ -185,6 +377,8 @@ def profile_eda(context: dict[str, Any]) -> dict[str, Any]:
                     "safe_column_count": len(safe_columns),
                     "sensitive_column_count": len(sensitive_columns),
                     "missing_cell_count": int(frame.isna().sum().sum()),
+                    "duplicate_row_count": duplicate_rows,
+                    "health_warnings": health_warnings,
                 },
                 "preview": {
                     "row_count": row_count,
@@ -211,6 +405,31 @@ def profile_eda(context: dict[str, Any]) -> dict[str, Any]:
                 },
                 "result": {"charts": charts},
                 "preview": {"charts": charts[:5]},
+            },
+            {
+                "type": "comparison",
+                "name": "目标驱动 EDA 与相关性诊断",
+                "parameters": {
+                    "dataset_version_id": context["dataset_version_id"],
+                    "target": target or None,
+                    "correlation_method": "spearman",
+                },
+                "result": {
+                    "target_diagnostics": target_diagnostics,
+                    "feature_target_relationships": relationship_rows[:50],
+                    "statistical_tests": statistical_tests[:50],
+                    "strongest_numeric_correlations": correlation_rows[:30],
+                    "warnings": health_warnings,
+                },
+                "preview": {
+                    "target_diagnostics": target_diagnostics,
+                    "top_relationships": relationship_rows[:10],
+                    "top_statistical_tests": sorted(
+                        statistical_tests,
+                        key=lambda row: float(row.get("q_value_bh", 1.0)),
+                    )[:10],
+                    "warnings": health_warnings,
+                },
             },
         ]
     }
@@ -422,3 +641,5 @@ default_tool_registry = ToolRegistry()
 default_tool_registry.register("dataset.inspect", "1.0.0", inspect_dataset)
 default_tool_registry.register("eda.profile", "1.0.0", profile_eda)
 default_tool_registry.register("baseline.pipeline", "1.0.0", run_baseline_pipeline)
+default_tool_registry.register("eda.profile", "2.0.0", profile_eda)
+default_tool_registry.register("model.train_compare", "2.0.0", train_and_compare)

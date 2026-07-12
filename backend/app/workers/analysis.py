@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.analysis.tool_registry import ToolRegistry, default_tool_registry
 from app.core.clock import utc_now
+from app.core.ids import new_id
 from app.domain.errors import DomainError
 from app.persistence.orm.models import DatasetVersionRow
 from app.persistence.orm.workflow_models import AnalysisSpecRow, ArtifactRow, ColumnSchemaRow
@@ -165,6 +166,47 @@ class AnalysisRunWorker:
                             result=artifact_payload.get("result"),
                             preview=artifact_payload.get("preview"),
                         )
+                    for file_payload in result.get("files", []):
+                        artifact_id = new_id("art_")
+                        content = bytes(file_payload["content"])
+                        storage_key = self.storage.write_artifact_file(
+                            project_id=project_id,
+                            artifact_id=artifact_id,
+                            file_name=str(file_payload["file_name"]),
+                            content=content,
+                        )
+                        checksum = self.storage.checksum_path(
+                            self.storage.resolve_key(storage_key)
+                        )
+                        file_result = dict(file_payload.get("result", {}))
+                        file_result.update(
+                            {
+                                "file_name": str(file_payload["file_name"]),
+                                "content_type": str(file_payload["content_type"]),
+                                "size_bytes": len(content),
+                            }
+                        )
+                        uow.artifacts.create_file_export(
+                            artifact_id=artifact_id,
+                            project_id=project_id,
+                            run_id=run_id,
+                            dataset_version_id=dataset_version_id,
+                            name=str(file_payload["name"]),
+                            producer=tool_name,
+                            producer_version=tool_version,
+                            parameters={
+                                "analysis_spec_id": analysis_spec["spec_id"],
+                                "spec_revision": analysis_spec["revision"],
+                            },
+                            result=file_result,
+                            preview={
+                                "file_name": file_result["file_name"],
+                                "size_bytes": file_result["size_bytes"],
+                                "selected_model": file_result.get("selected_model"),
+                            },
+                            storage_key=storage_key,
+                            checksum=checksum,
+                        )
                     progress = int(index / max(steps_total, 1) * 100)
                     uow.runs.succeed_step(run, step, progress=progress)
                     completed_tools.append(f"{tool_name}@{tool_version}")
@@ -264,6 +306,39 @@ class AnalysisRunWorker:
                     limitations=[
                         "Dummy Baseline 仅作为后续模型对照，不代表业务可部署模型。",
                         "指标基于当前 AnalysisSpec 的确定性数据拆分。",
+                    ],
+                )
+        evaluation = by_name.get("保留集评估指标")
+        model_card = by_name.get("候选模型选择与模型卡")
+        comparison = by_name.get("模型候选与 Dummy 比较")
+        limitations = by_name.get("模型适用范围与限制")
+        if evaluation is not None and isinstance(evaluation.result_json, dict):
+            result = evaluation.result_json
+            metric_values = result.get("metrics", {})
+            primary_metric = str(result.get("primary_metric") or "")
+            primary_value = (
+                metric_values.get(primary_metric) if isinstance(metric_values, dict) else None
+            )
+            model_name = str(result.get("model") or "已选择模型")
+            if isinstance(primary_value, (int, float)):
+                evidence_ids = [evaluation.artifact_id]
+                for artifact in (model_card, comparison, limitations):
+                    if artifact is not None:
+                        evidence_ids.append(artifact.artifact_id)
+                uow.claims.create_validated(
+                    project_id=project_id,
+                    run_id=run_id,
+                    dataset_version_id=evaluation.dataset_version_id,
+                    text=(
+                        f"模型 {model_name} 在独立保留集上的 "
+                        f"{primary_metric}={primary_value}。"
+                    ),
+                    level=3,
+                    evidence_ids=evidence_ids,
+                    limitations=[
+                        "候选模型由训练分区交叉验证选择，保留集未参与模型选择。",
+                        "该结果只适用于当前数据版本、字段定义和预测时点。",
+                        "预测关联与特征重要性均不构成因果结论。",
                     ],
                 )
 

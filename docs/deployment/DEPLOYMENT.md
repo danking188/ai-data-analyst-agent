@@ -121,9 +121,14 @@ Current production deployment:
 - Studio: `https://www.modelscope.cn/studios/Ascano/ai-data-analyst-agent`
 - Application: `https://ascano-ai-data-analyst-agent.ms.show`
 - Visibility: public Studio endpoint with application-level JWT authentication
-- Storage: SQLite, datasets, and generated artifacts under `/mnt/workspace/data`
-- Verified: health, login, authenticated capabilities, CSV ingestion, full
-  analysis run, and artifact persistence within the active Studio workspace
+- Storage: external PostgreSQL plus private Supabase S3-compatible object storage
+- Worker: database-backed runner supervised beside the API process
+- Verified: health, login, registration, CSV ingestion, cleaning, full analysis
+  run, artifact persistence, and cross-deployment account/data recovery
+
+The real modeling runtime additionally installs scikit-learn, SciPy and joblib. A model run
+produces a protected downloadable model Artifact, so the S3 credentials must permit object
+creation and retrieval under `S3_PREFIX`.
 
 Build and test the single-container image locally:
 

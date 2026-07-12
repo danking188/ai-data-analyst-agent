@@ -31,7 +31,7 @@ describe("App", () => {
   it.each([
     ["/quality/cleaning", "清洗计划"],
     ["/explore", "分析设计"],
-    ["/model", "基线模型"],
+    ["/model", "模型评估"],
     ["/report", "分析报告"],
   ])("renders the completed workflow at %s", async (route, heading) => {
     const queryClient = new QueryClient({

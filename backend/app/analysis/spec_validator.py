@@ -17,6 +17,7 @@ METRICS_BY_TASK: dict[str, set[str]] = {
         "recall",
         "f1",
         "roc_auc",
+        "pr_auc",
         "log_loss",
     },
     "multiclass_classification": {
@@ -57,6 +58,14 @@ def validate_analysis_spec(
         raise validation_error("included_columns 与 excluded_columns 不可重叠", columns=overlap)
     if spec.target and spec.target in spec.excluded_columns:
         raise validation_error("目标字段不能被排除", target=spec.target)
+    sensitive_features = sorted(
+        column for column in spec.included_columns if columns[column].sensitive
+    )
+    if sensitive_features:
+        raise validation_error(
+            "敏感字段不能直接作为自动建模特征",
+            columns=sensitive_features,
+        )
 
     allowed_metrics = METRICS_BY_TASK[spec.task]
     unsupported = sorted(set(spec.metrics) - allowed_metrics)

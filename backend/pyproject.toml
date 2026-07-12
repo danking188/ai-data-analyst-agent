@@ -12,6 +12,8 @@ dependencies = [
   "alembic>=1.15,<2",
   "boto3>=1.38,<2",
   "fastapi>=0.115,<1",
+  "joblib>=1.4,<2",
+  "numpy>=2,<3",
   "openpyxl>=3.1,<4",
   "pandas>=2.2,<3",
   "pydantic>=2.10,<3",
@@ -19,6 +21,8 @@ dependencies = [
   "PyJWT>=2.10,<3",
   "psycopg[binary]>=3.2,<4",
   "python-multipart>=0.0.20,<1",
+  "scikit-learn>=1.7,<2",
+  "scipy>=1.15,<2",
   "sqlalchemy>=2.0.38,<3",
   "uvicorn[standard]>=0.34,<1",
   "xlrd>=2,<3",
@@ -57,7 +61,15 @@ plugins = ["pydantic.mypy"]
 exclude = ["migrations"]
 
 [[tool.mypy.overrides]]
-module = ["boto3.*", "botocore.*", "pandas.*", "pyarrow.*"]
+module = [
+  "boto3.*",
+  "botocore.*",
+  "joblib.*",
+  "pandas.*",
+  "pyarrow.*",
+  "scipy.*",
+  "sklearn.*",
+]
 ignore_missing_imports = true
 
 [tool.coverage.run]

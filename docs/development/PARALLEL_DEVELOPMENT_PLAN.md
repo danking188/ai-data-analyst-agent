@@ -266,3 +266,7 @@ BE-001 → BE-002 → BE-003 → BE-005 → BE-006 → BE-101
 | PROD-008 | [x] | 外部 PostgreSQL 与对象存储 | PostgreSQL/S3 就绪检查通过；账号、项目和数据集跨部署保留；真实上传验收通过 |
 | PROD-009 | [x] | 独立通用 Job Runner 与生产进程监督 | 七类异步 Job 由数据库队列领取；线上任务完成 queued → running → succeeded 验收 |
 | PROD-010 | [x] | 清洗页面真实数据化 | Schema、预览 Artifact、影响行数和版本信息均来自真实接口；桌面和 390px 浏览器验收通过 |
+| PROD-011 | [x] | P2 目标驱动统计 EDA | 目标分布、Spearman 关系、非参数检验、效应量和 BH 多重检验校正进入 Artifact |
+| PROD-012 | [x] | P3 真实候选模型训练与评估 | Dummy、线性模型、梯度提升通过 sklearn Pipeline 训练；仅用训练分区 CV 选型，保留集独立评估 |
+| PROD-013 | [x] | P4 模型解释与持久化 | 四类拆分、置换重要性、误差摘要、模型卡和受保护 joblib 模型包进入对象存储 |
+| PROD-014 | [x] | P5 证据化模型结论与可用界面 | 模型结论绑定指标、模型卡、比较与限制 Artifact；前端可切换同类产物并查看候选对比 |

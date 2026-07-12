@@ -117,6 +117,19 @@ docker compose --env-file .env.deploy up --build
 数据版本和导出产物不再依赖容器磁盘。`/api/v1/health/ready` 会同时检查两项依赖。
 生产镜像还会监督独立的数据库队列 Worker，避免长任务占用 API 请求进程。
 
+## 真实分析与建模
+
+建模运行不再只返回固定 Dummy 数值。分类任务会比较 Dummy、逻辑回归和
+HistGradientBoosting；回归任务会比较 Dummy、Ridge 和
+HistGradientBoostingRegressor。数值和类别预处理统一封装在 sklearn Pipeline
+中，并且只在训练分区拟合。
+
+模型选择仅使用训练分区交叉验证，随机、分层、时间和 Group 拆分均有独立实现；
+保留集只进行最终一次评估。运行会保存目标驱动 EDA、统计检验及 BH 校正、候选
+模型比较、Dummy 对照、混淆矩阵或残差摘要、置换重要性、限制说明和可下载的
+joblib 模型包。核心计算完全不依赖大语言模型；未来接入 LLM 时只允许根据现有
+Artifact 组织叙述，不能生成或改写指标。
+
 ## 目录维护规则
 
 - 业务代码只放在 `frontend/` 或 `backend/`。

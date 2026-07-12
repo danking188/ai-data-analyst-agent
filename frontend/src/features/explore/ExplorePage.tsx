@@ -15,6 +15,7 @@ import { queryKeys } from "../../lib/queryKeys";
 const metricCatalog: Record<AnalysisSpecInput["task"], Array<{ value: string; label: string }>> = {
   binary_classification: [
     { value: "accuracy", label: "Accuracy" }, { value: "roc_auc", label: "ROC-AUC" },
+    { value: "pr_auc", label: "PR-AUC" },
     { value: "f1", label: "F1" }, { value: "precision", label: "Precision" },
     { value: "recall", label: "Recall" }, { value: "log_loss", label: "Log Loss" },
   ],
@@ -167,7 +168,7 @@ export function ExplorePage() {
           </div>
         </section>
         <aside className="run-confirm">
-          <h2>运行确认</h2><h3>真实数据约束</h3><ul><li>输入绑定数据版本 {version.version_id}。</li><li>敏感字段不会进入自动分析图表。</li><li>模型先拆分数据，再仅使用训练集拟合 Baseline。</li></ul>
+          <h2>运行确认</h2><h3>真实数据约束</h3><ul><li>输入绑定数据版本 {version.version_id}。</li><li>敏感字段不会进入自动分析图表。</li><li>候选模型仅在训练分区内交叉验证，保留集不参与选择。</li></ul>
           <dl><div><dt>任务类型</dt><dd>{taskLabels[form.task]}</dd></div><div><dt>目标字段</dt><dd>{form.target ?? "未选择"}</dd></div><div><dt>参与字段</dt><dd>{form.included_columns.length} 个</dd></div><div><dt>拆分策略</dt><dd>{form.split_strategy}</dd></div><div><dt>评估指标</dt><dd>{form.metrics.map((value) => availableMetrics.find((item) => item.value === value)?.label ?? value).join(", ")}</dd></div></dl>
           <Button disabled={runMutation.isPending || !form.target || !form.metrics.length || !form.included_columns.length} icon={<Play size={16} />} onClick={() => runMutation.mutate()} variant="primary">确认并运行</Button>
         </aside>
@@ -220,13 +221,23 @@ function TableArtifact({ artifact }: { artifact: Artifact }) {
   return <div className="artifact-table-wrap"><table><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.slice(0, 30).map((row, index) => <tr key={index}>{columns.map((column) => <td key={column}>{formatValue(row[column])}</td>)}</tr>)}</tbody></table></div>;
 }
 
+function ComparisonArtifact({ artifact }: { artifact: Artifact }) {
+  const result = asObject(artifact.result) ?? {};
+  const candidates = Array.isArray(result.candidates) ? result.candidates.map(asObject).filter(Boolean) as Array<Record<string, unknown>> : [];
+  const holdout = Array.isArray(result.holdout_comparison) ? result.holdout_comparison.map(asObject).filter(Boolean) as Array<Record<string, unknown>> : [];
+  if (!candidates.length && !holdout.length) return <pre>{JSON.stringify(artifact.result, null, 2)}</pre>;
+  return <div className="artifact-stack">{candidates.length ? <section><h3>训练集交叉验证</h3><div className="artifact-table-wrap"><table><thead><tr><th>候选模型</th><th>状态</th><th>CV 均值</th><th>标准差</th><th>折数</th></tr></thead><tbody>{candidates.map((row) => <tr key={String(row.name)}><td>{formatValue(row.name)}</td><td>{formatValue(row.status)}</td><td>{formatValue(row.cv_score_mean)}</td><td>{formatValue(row.cv_score_std)}</td><td>{formatValue(row.cv_folds)}</td></tr>)}</tbody></table></div></section> : null}{holdout.length ? <section><h3>入选模型与 Dummy 保留集对比</h3><div className="artifact-table-wrap"><table><thead><tr><th>指标</th><th>入选模型</th><th>Dummy</th><th>改善量</th></tr></thead><tbody>{holdout.map((row) => <tr key={String(row.metric)}><td>{formatValue(row.metric)}</td><td>{formatValue(row.selected)}</td><td>{formatValue(row.baseline)}</td><td>{formatValue(row.improvement)}</td></tr>)}</tbody></table></div></section> : null}</div>;
+}
+
 export function ArtifactViewer({ artifacts }: { artifacts: Artifact[] }) {
   const { project } = useAppContext();
   const { pushToast } = useToast();
   const types = useMemo(() => [...new Set(artifacts.map((item) => item.type))], [artifacts]);
   const [type, setType] = useState<Artifact["type"]>("metric");
+  const [artifactId, setArtifactId] = useState<string | null>(null);
   const selectedType = types.includes(type) ? type : types[0];
-  const selected = artifacts.find((item) => item.type === selectedType);
+  const candidates = artifacts.filter((item) => item.type === selectedType);
+  const selected = candidates.find((item) => item.artifact_id === artifactId) ?? candidates[0];
   const labels: Record<Artifact["type"], string> = { metric: "指标", chart: "图表", table: "表格", model: "模型", file: "文件", log: "日志", comparison: "比较" };
-  return <section className="artifact-viewer"><nav>{types.map((item) => <button className={selectedType === item ? "is-active" : ""} key={item} onClick={() => setType(item)}>{labels[item]}</button>)}</nav>{selected ? <div className="artifact-content"><header><div><h2>{selected.name}</h2><p>{selected.artifact_id} · {selected.producer} {selected.producer_version}</p></div>{selected.downloadable && project ? <Button icon={<Download size={15} />} onClick={async () => { const download = await apiClient.downloadArtifact(project.project_id, selected.artifact_id); pushToast(`正在下载 ${download.file_name}`); }} size="sm">下载</Button> : null}</header>{selected.type === "chart" ? <ChartArtifact artifact={selected} /> : selected.type === "table" ? <TableArtifact artifact={selected} /> : selected.type === "metric" ? <MetricArtifact artifact={selected} /> : <pre>{JSON.stringify(selected.result, null, 2)}</pre>}</div> : <EmptyState title="暂无分析产物" description="运行完成后会在这里显示真实数据生成的可追溯产物。" />}</section>;
+  return <section className="artifact-viewer"><nav>{types.map((item) => <button className={selectedType === item ? "is-active" : ""} key={item} onClick={() => { setType(item); setArtifactId(null); }}>{labels[item]}</button>)}</nav>{selected ? <div className="artifact-content"><header><div><h2>{selected.name}</h2><p>{selected.artifact_id} · {selected.producer} {selected.producer_version}</p></div><div className="artifact-actions">{candidates.length > 1 ? <select aria-label="选择分析产物" value={selected.artifact_id} onChange={(event) => setArtifactId(event.target.value)}>{candidates.map((item) => <option key={item.artifact_id} value={item.artifact_id}>{item.name}</option>)}</select> : null}{selected.downloadable && project ? <Button icon={<Download size={15} />} onClick={async () => { const download = await apiClient.downloadArtifact(project.project_id, selected.artifact_id); pushToast(`正在下载 ${download.file_name}`); }} size="sm">下载</Button> : null}</div></header>{selected.type === "chart" ? <ChartArtifact artifact={selected} /> : selected.type === "table" ? <TableArtifact artifact={selected} /> : selected.type === "metric" ? <MetricArtifact artifact={selected} /> : selected.type === "comparison" ? <ComparisonArtifact artifact={selected} /> : <pre>{JSON.stringify(selected.result, null, 2)}</pre>}</div> : <EmptyState title="暂无分析产物" description="运行完成后会在这里显示真实数据生成的可追溯产物。" />}</section>;
 }

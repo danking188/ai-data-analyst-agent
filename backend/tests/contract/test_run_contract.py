@@ -85,7 +85,9 @@ def test_analysis_run_create_execute_get_and_list(
     assert run["steps"][0]["status"] == "succeeded"
     assert run["steps"][1]["tool_name"] == "eda.profile"
     assert run["steps"][1]["status"] == "succeeded"
-    assert run["steps"][2]["tool_name"] == "baseline.pipeline"
+    assert run["steps"][1]["tool_version"] == "2.0.0"
+    assert run["steps"][2]["tool_name"] == "model.train_compare"
+    assert run["steps"][2]["tool_version"] == "2.0.0"
     assert run["steps"][2]["status"] == "succeeded"
     assert run["environment"]["network_access"] is False
     assert run["steps"][2]["artifact_ids"]
@@ -97,12 +99,15 @@ def test_analysis_run_create_execute_get_and_list(
     assert artifacts.status_code == 200
     artifact_page = artifacts.json()
     assert_matches_schema(contract, "ArtifactPage", artifact_page)
-    assert artifact_page["total"] == 5
+    assert artifact_page["total"] == 10
     assert {item["type"] for item in artifact_page["items"]} == {
         "metric",
         "table",
         "chart",
         "model",
+        "comparison",
+        "file",
+        "log",
     }
     chart = next(item for item in artifact_page["items"] if item["type"] == "chart")
     assert chart["run_id"] == job["resource_id"]
@@ -110,11 +115,36 @@ def test_analysis_run_create_execute_get_and_list(
     assert chart["parameters"]["dataset_version_id"] == version_id
     assert chart["result"]["charts"]
     model = next(item for item in artifact_page["items"] if item["type"] == "model")
-    assert model["result"]["model_family"] == "dummy_baseline"
+    assert model["result"]["model_family"] in {
+        "logistic_regression",
+        "hist_gradient_boosting",
+    }
     assert model["result"]["split"]["train_rows"] > 0
     assert model["result"]["split"]["test_rows"] > 0
     assert model["result"]["leakage_controls"]["split_before_fit"] is True
     assert model["result"]["leakage_controls"]["fit_scope"] == "train_only"
+    assert model["result"]["leakage_controls"]["test_used_for_selection"] is False
+    assert model["result"]["cross_validation"]["selection_scope"] == (
+        "training_partition_only"
+    )
+    metric = next(
+        item for item in artifact_page["items"] if item["name"] == "保留集评估指标"
+    )
+    assert metric["result"]["metrics"]["accuracy"] is not None
+    assert metric["result"]["baseline_metrics"]["accuracy"] is not None
+    comparison = next(
+        item
+        for item in artifact_page["items"]
+        if item["type"] == "comparison" and "candidates" in item["result"]
+    )
+    assert {candidate["name"] for candidate in comparison["result"]["candidates"]} == {
+        "dummy",
+        "logistic_regression",
+        "hist_gradient_boosting",
+    }
+    model_file = next(item for item in artifact_page["items"] if item["type"] == "file")
+    assert model_file["downloadable"] is True
+    assert model_file["result"]["file_name"].endswith(".joblib")
 
     fetched_artifact = app_client.get(
         f"/api/v1/projects/{project_id}/artifacts/{chart['artifact_id']}",
@@ -130,7 +160,7 @@ def test_analysis_run_create_execute_get_and_list(
         params={"type": "chart"},
     )
     assert chart_only.status_code == 200
-    assert chart_only.json()["total"] == 1
+    assert chart_only.json()["total"] == 2
 
     claims = app_client.get(
         f"{url}/{job['resource_id']}/claims",
