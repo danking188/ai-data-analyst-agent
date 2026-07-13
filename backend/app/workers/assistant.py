@@ -15,7 +15,12 @@ from app.llm.orchestrator import AgentState, AgentTrace, ContextCompactor
 from app.llm.policy import AssistantBudget
 from app.llm.prompts import get_prompt
 from app.llm.provider import LLMMessage, LLMProvider, LLMProviderError, LLMResponse
-from app.llm.schemas import AssistantAnswer, AssistantIntent, AssistantPlan
+from app.llm.schemas import (
+    AssistantAnswer,
+    AssistantFinding,
+    AssistantIntent,
+    AssistantPlan,
+)
 from app.llm.tools import AssistantToolContext, AssistantToolRegistry, AssistantToolResult
 from app.persistence.orm.assistant_models import AssistantMessageRow
 from app.persistence.repositories.jobs import JobRepository
@@ -142,9 +147,7 @@ class AssistantTurnWorker:
                     history, existing_summary=conversation.summary
                 )
                 if compacted.compacted_count:
-                    uow.assistant.update_conversation(
-                        conversation, summary=compacted.summary
-                    )
+                    uow.assistant.update_conversation(conversation, summary=compacted.summary)
                 context_manifest = {
                     "project_id": job.project_id,
                     "conversation_id": conversation.conversation_id,
@@ -255,8 +258,12 @@ class AssistantTurnWorker:
                 tool_results=tool_results,
             )
             self._record_response(budget, correction_response)
-            validate_answer_sources(correction_response.content, sources)
-            answer = correction_response.content
+            try:
+                validate_answer_sources(correction_response.content, sources)
+                answer = correction_response.content
+            except CitationValidationError:
+                answer = self._deterministic_evidence_fallback(tool_results)
+                validate_answer_sources(answer, sources)
         trace.move(AgentState.SUMMARIZE, detail="persist_grounded_answer")
         trace.move(AgentState.COMPLETE)
         self._persist_trace(run_id, trace)
@@ -608,6 +615,56 @@ class AssistantTurnWorker:
                 validation_session.close()
             arguments[step.position] = candidate
         return arguments
+
+    @staticmethod
+    def _deterministic_evidence_fallback(
+        tool_results: list[AssistantToolResult],
+    ) -> AssistantAnswer:
+        findings: list[AssistantFinding] = []
+        limitations = ["模型生成的叙述未通过证据校验，本回答已降级为确定性工具摘要。"]
+        for result in tool_results:
+            if result.tool_name == "schema.get":
+                for column in result.data.get("columns", [])[:20]:
+                    if not isinstance(column, dict):
+                        continue
+                    source_id = str(column.get("column_schema_id", ""))
+                    name = str(column.get("name", ""))
+                    physical_type = str(column.get("physical_type", "unknown"))
+                    if source_id in result.citation_sources and name:
+                        findings.append(
+                            AssistantFinding(
+                                text=f"字段 `{name}` 的物理类型为 `{physical_type}`。",
+                                claim_level=1,
+                                citation_ids=[source_id],
+                                limitations=[],
+                            )
+                        )
+            elif result.tool_name == "quality.list_issues":
+                issues = result.data.get("issues", [])
+                if not issues:
+                    limitations.append("当前质量工具未返回开放问题；这不等于数据不存在其他风险。")
+                for issue in issues[:20]:
+                    if not isinstance(issue, dict):
+                        continue
+                    source_id = str(issue.get("issue_id", ""))
+                    issue_type = str(issue.get("issue_type", "quality_issue"))
+                    column_name = str(issue.get("column", "") or "")
+                    if source_id in result.citation_sources:
+                        subject = f"字段 `{column_name}` 的" if column_name else ""
+                        findings.append(
+                            AssistantFinding(
+                                text=f"质量工具识别到{subject} `{issue_type}` 问题。",
+                                claim_level=1,
+                                citation_ids=[source_id],
+                                limitations=[],
+                            )
+                        )
+        return AssistantAnswer(
+            summary="已读取当前数据版本的 Schema 和质量证据，并返回可核验摘要。",
+            findings=findings,
+            next_actions=[],
+            limitations=limitations,
+        )
 
     def _generate_analysis_spec(
         self, question: str, context: dict[str, Any]
@@ -1005,9 +1062,7 @@ class AssistantTurnWorker:
                     run = uow.assistant.latest_llm_run_for_message(message_id)
                     if run and run.status not in {"succeeded", "failed", "cancelled"}:
                         budget = (
-                            self._active_budget
-                            if self._active_run_id == run.llm_run_id
-                            else None
+                            self._active_budget if self._active_run_id == run.llm_run_id else None
                         )
                         uow.assistant.finish_llm_run(
                             run,
@@ -1062,9 +1117,7 @@ class AssistantTurnWorker:
         try:
             with UnitOfWork(session) as uow:
                 run = uow.assistant.get_llm_run(llm_run_id)
-                uow.assistant.update_llm_run_manifest(
-                    run, {"orchestration": trace.manifest()}
-                )
+                uow.assistant.update_llm_run_manifest(run, {"orchestration": trace.manifest()})
         finally:
             session.close()
 

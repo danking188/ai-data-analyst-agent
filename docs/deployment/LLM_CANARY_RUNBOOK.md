@@ -20,6 +20,7 @@ LLM_API_BASE=https://provider.example/v1
 LLM_API_KEY=<secret>
 LLM_MODEL=<exact-model-id>
 LLM_STRUCTURED_OUTPUT_MODE=json_schema
+LLM_ENABLE_THINKING=<false for providers that support this control; otherwise omit>
 LLM_MAX_CALLS_PER_TURN=4
 LLM_MAX_TOOL_CALLS_PER_TURN=8
 LLM_DAILY_TOKEN_BUDGET_PER_USER=200000

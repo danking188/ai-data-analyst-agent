@@ -21,5 +21,6 @@ def get_llm_provider() -> LLMProvider | None:
         api_base=settings.llm_api_base,
         api_key=settings.llm_api_key,
         structured_output_mode=cast(StructuredOutputMode, settings.llm_structured_output_mode),
+        enable_thinking=settings.llm_enable_thinking,
         max_retries=settings.llm_max_retries,
     )

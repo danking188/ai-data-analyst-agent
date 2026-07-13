@@ -69,6 +69,26 @@ def test_llm_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         settings = get_settings()
         assert settings.llm_enabled is False
         assert settings.llm_provider == "openai_compatible"
+        assert settings.llm_enable_thinking is None
+    finally:
+        get_settings.cache_clear()
+
+
+def test_llm_thinking_control_is_optional_and_strict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_ENABLE_THINKING", "false")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().llm_enable_thinking is False
+    finally:
+        get_settings.cache_clear()
+
+    monkeypatch.setenv("LLM_ENABLE_THINKING", "sometimes")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="LLM_ENABLE_THINKING"):
+            get_settings()
     finally:
         get_settings.cache_clear()
 

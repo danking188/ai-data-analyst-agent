@@ -230,3 +230,54 @@ def test_assistant_worker_corrects_unsupported_answer_without_repeating_tools(
         assert run.context_manifest_json["orchestration"]["state"] == "complete"
     finally:
         session.close()
+
+
+def test_assistant_worker_degrades_after_the_only_correction_also_fails(
+    monkeypatch, app_client
+) -> None:
+    project_id, message_id, job_id = _queued_turn(monkeypatch, app_client, "检查当前项目")
+    invalid = {
+        "summary": "项目有 99 个版本。",
+        "findings": [
+            {
+                "text": "项目有 99 个版本。",
+                "claim_level": 1,
+                "citation_ids": ["invented_source"],
+                "limitations": [],
+            }
+        ],
+        "next_actions": [],
+        "limitations": [],
+    }
+    provider = FakeLLMProvider(
+        [
+            {
+                "intent": "inspect_data",
+                "rationale": "Inspect project context",
+                "requires_new_computation": False,
+            },
+            invalid,
+            invalid,
+        ]
+    )
+    worker = AssistantTurnWorker(
+        get_database(),
+        worker_id="test-assistant-fallback",
+        provider=provider,
+        settings=get_settings(),
+    )
+    assert worker.run(job_id) is True
+
+    session = get_database().session()
+    try:
+        repository = AssistantRepository(session)
+        message = repository.get_message(project_id=project_id, message_id=message_id)
+        run = repository.latest_llm_run_for_message(message_id)
+        assert message.status == "completed"
+        assert message.content == "已读取当前数据版本的 Schema 和质量证据，并返回可核验摘要。"
+        assert message.content_json is not None
+        assert "降级为确定性工具摘要" in message.content_json["answer"]["limitations"][0]
+        assert run is not None and run.model_call_count == 3
+        assert len(repository.list_tool_calls(run.llm_run_id)) == 1
+    finally:
+        session.close()

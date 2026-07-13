@@ -25,11 +25,13 @@ def provider_with_handler(
     *,
     max_retries: int = 0,
     sleeps: list[float] | None = None,
+    enable_thinking: bool | None = None,
 ) -> OpenAICompatibleProvider:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     return OpenAICompatibleProvider(
         api_base="https://provider.example/v1",
         api_key="private-key",
+        enable_thinking=enable_thinking,
         max_retries=max_retries,
         client=client,
         sleep=(sleeps.append if sleeps is not None else lambda _: None),
@@ -144,10 +146,24 @@ def test_openai_compatible_provider_sends_json_schema_and_parses_usage() -> None
     assert requests[0].headers["authorization"] == "Bearer private-key"
     assert payload["response_format"]["type"] == "json_schema"
     assert payload["response_format"]["json_schema"]["strict"] is True
+    assert "enable_thinking" not in payload
     assert response.content.answer == "ok"
     assert response.request_id == "header-request"
     assert response.model == "resolved-model"
     assert response.usage.total_tokens == 15
+
+
+def test_provider_only_sends_thinking_control_when_explicitly_configured() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return success_response()
+
+    generate(provider_with_handler(handler, enable_thinking=False))
+
+    payload = json.loads(requests[0].content)
+    assert payload["enable_thinking"] is False
 
 
 @pytest.mark.parametrize(

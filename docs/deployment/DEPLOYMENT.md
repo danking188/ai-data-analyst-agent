@@ -146,6 +146,7 @@ LLM_API_BASE=https://provider.example/v1
 LLM_API_KEY=secret-managed-provider-key
 LLM_MODEL=provider-model-name
 LLM_STRUCTURED_OUTPUT_MODE=json_schema
+LLM_ENABLE_THINKING=
 LLM_TEMPERATURE=0.1
 LLM_TIMEOUT_SECONDS=120
 LLM_MAX_OUTPUT_TOKENS=4096

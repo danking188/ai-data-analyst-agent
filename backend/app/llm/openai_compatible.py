@@ -24,6 +24,7 @@ class OpenAICompatibleProvider:
         api_base: str,
         api_key: str,
         structured_output_mode: StructuredOutputMode = "json_schema",
+        enable_thinking: bool | None = None,
         max_retries: int = 2,
         client: httpx.Client | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -37,6 +38,7 @@ class OpenAICompatibleProvider:
         self._endpoint = f"{api_base.rstrip('/')}/chat/completions"
         self._api_key = api_key
         self._structured_output_mode = structured_output_mode
+        self._enable_thinking = enable_thinking
         self._max_retries = max_retries
         self._client = client or httpx.Client()
         self._owns_client = client is None
@@ -117,6 +119,8 @@ class OpenAICompatibleProvider:
         }
         if response_format is not None:
             payload["response_format"] = response_format
+        if self._enable_thinking is not None:
+            payload["enable_thinking"] = self._enable_thinking
         return payload
 
     def _post_with_retry(

@@ -17,6 +17,18 @@ def _read_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def _optional_bool(name: str) -> bool | None:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"{name} must be true or false when configured")
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     app_env: str
@@ -58,6 +70,7 @@ class Settings:
     llm_api_key: str | None = field(repr=False)
     llm_model: str | None
     llm_structured_output_mode: str
+    llm_enable_thinking: bool | None
     llm_temperature: float
     llm_timeout_seconds: int
     llm_max_output_tokens: int
@@ -132,6 +145,7 @@ def get_settings() -> Settings:
         llm_api_key=os.getenv("LLM_API_KEY") or None,
         llm_model=os.getenv("LLM_MODEL") or None,
         llm_structured_output_mode=os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").lower(),
+        llm_enable_thinking=_optional_bool("LLM_ENABLE_THINKING"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
         llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
         llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096")),
