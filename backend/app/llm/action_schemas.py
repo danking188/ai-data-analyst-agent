@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.llm.schemas import StrictLLMModel
 
@@ -30,6 +30,26 @@ class AnalysisSpecDraft(StrictLLMModel):
     rationale: str = Field(min_length=1, max_length=2000)
     leakage_warnings: list[str] = Field(default_factory=list, max_length=20)
     validation_warnings: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def normalize_metric_aliases(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        aliases = {
+            "f1_score": "f1",
+            "f1_macro": "f1",
+            "auc": "roc_auc",
+            "roc-auc": "roc_auc",
+            "prauc": "pr_auc",
+            "precision_recall_auc": "pr_auc",
+            "mean_absolute_error": "mae",
+            "mean_squared_error": "mse",
+            "root_mean_squared_error": "rmse",
+            "r_squared": "r2",
+        }
+        normalized = [str(metric).strip().lower() for metric in value]
+        return [aliases.get(metric, metric) for metric in normalized]
 
     @model_validator(mode="after")
     def validate_column_sets(self) -> AnalysisSpecDraft:

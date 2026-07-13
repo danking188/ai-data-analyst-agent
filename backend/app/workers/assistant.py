@@ -422,6 +422,14 @@ class AssistantTurnWorker:
                             "task": "Classify the current user request.",
                             "question": question,
                             "recent_conversation": history_payload,
+                            "decision_rules": [
+                                "Questions about existing columns, schema, project context, or "
+                                "quality results are inspect_data and do not require new "
+                                "computation.",
+                                "Use plan_analysis only for an explicit new EDA, statistical test, "
+                                "or model run.",
+                                "Inspection never implies model training.",
+                            ],
                         }
                     ),
                 ),

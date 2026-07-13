@@ -26,7 +26,10 @@ PROMPTS = {
     ("assistant.intent", "1.0.0"): PromptTemplate(
         name="assistant.intent",
         version="1.0.0",
-        system=EVIDENCE_BOUNDARY,
+        system=EVIDENCE_BOUNDARY
+        + "\nClassify schema, column, dataset context, and existing quality-result questions as "
+        "inspect_data with requires_new_computation=false. Use plan_analysis only when the user "
+        "explicitly requests a new calculation, statistical analysis, or model run.",
     ),
     ("assistant.plan", "1.0.0"): PromptTemplate(
         name="assistant.plan",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.llm.action_schemas import AnalysisSpecDraft
 from app.llm.prompts import get_prompt
 from app.llm.schemas import AssistantAnswer, AssistantPlan
 
@@ -53,3 +54,19 @@ def test_answer_rejects_unexpected_fields() -> None:
                 "invented_metric": 99,
             }
         )
+
+
+def test_analysis_spec_draft_normalizes_common_model_metric_aliases() -> None:
+    draft = AnalysisSpecDraft.model_validate(
+        {
+            "name": "Churn",
+            "task": "binary_classification",
+            "target": "churned",
+            "split_strategy": "stratified",
+            "metrics": ["f1_score", "AUC", "precision_recall_auc"],
+            "included_columns": ["tenure_months"],
+            "excluded_columns": [],
+            "rationale": "Predict churn",
+        }
+    )
+    assert draft.metrics == ["f1", "roc_auc", "pr_auc"]
