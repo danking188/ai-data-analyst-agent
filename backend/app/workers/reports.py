@@ -7,11 +7,23 @@ from typing import Any
 import pandas as pd
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.ids import new_id
 from app.domain.errors import DomainError
+from app.llm.citations import CitationValidationError
+from app.llm.context import EvidenceContext, build_evidence_context
+from app.llm.factory import get_llm_provider
+from app.llm.narrative import PROMPT_NAME, PROMPT_VERSION, generate_evidence_narrative
+from app.llm.provider import LLMProvider, LLMProviderError
 from app.persistence.orm.models import DatasetVersionRow
-from app.persistence.orm.workflow_models import ArtifactRow, ClaimRow
+from app.persistence.orm.workflow_models import (
+    AnalysisSpecRow,
+    ArtifactRow,
+    ClaimEvidenceRow,
+    ClaimRow,
+)
 from app.persistence.repositories.jobs import JobRepository
+from app.persistence.repositories.runs import AnalysisRunRepository
 from app.persistence.session import Database, get_database
 from app.persistence.unit_of_work import UnitOfWork
 from app.storage.files import FileStorage, get_file_storage
@@ -24,16 +36,32 @@ class ReportExportWorker:
         storage: FileStorage,
         *,
         worker_id: str,
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         self.database = database
         self.storage = storage
         self.worker_id = worker_id
+        self.llm_provider = llm_provider
 
     def run(self, job_id: str) -> bool:
         if not self._claim(job_id):
             return False
         try:
             self._process(job_id)
+        except LLMProviderError as exc:
+            self._fail(
+                job_id,
+                DomainError(exc.code, exc.message, 503, retryable=exc.retryable),
+            )
+        except CitationValidationError:
+            self._fail(
+                job_id,
+                DomainError(
+                    "LLM_EVIDENCE_VALIDATION_FAILED",
+                    "大模型解读未通过证据一致性校验",
+                    422,
+                ),
+            )
         except DomainError as exc:
             self._fail(job_id, exc)
         except Exception:
@@ -56,6 +84,10 @@ class ReportExportWorker:
             session.close()
 
     def _process(self, job_id: str) -> None:
+        request = self._load_job_request(job_id)
+        if request.get("format") == "ai_narrative":
+            self._process_ai_narrative(job_id, request)
+            return
         session = self.database.session()
         try:
             with UnitOfWork(session) as uow:
@@ -152,6 +184,172 @@ class ReportExportWorker:
         finally:
             session.close()
 
+    def _load_job_request(self, job_id: str) -> dict[str, Any]:
+        session = self.database.session()
+        try:
+            job = JobRepository(session).get(job_id)
+            if job.kind != "report_export":
+                raise DomainError("STATE_CONFLICT", "Job 类型不是报告导出", 409)
+            return dict(job.request_json)
+        finally:
+            session.close()
+
+    def _process_ai_narrative(self, job_id: str, request: dict[str, Any]) -> None:
+        settings = get_settings()
+        provider = self.llm_provider or get_llm_provider()
+        if provider is None or not settings.llm_model:
+            raise DomainError("LLM_DISABLED", "当前部署尚未启用大模型证据解读", 409)
+        context = self._load_evidence_context(
+            job_id,
+            request,
+            max_chars=max(settings.llm_max_input_tokens * 4 - 4000, 1000),
+        )
+        response = generate_evidence_narrative(
+            provider=provider,
+            context=context,
+            model=settings.llm_model,
+            temperature=settings.llm_temperature,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_output_tokens=settings.llm_max_output_tokens,
+        )
+        session = self.database.session()
+        try:
+            with UnitOfWork(session) as uow:
+                job = uow.jobs.get(job_id)
+                if job.status not in {"running", "cancelling"}:
+                    raise DomainError("STATE_CONFLICT", "报告任务不在可完成状态", 409)
+                artifact = uow.artifacts.create_analysis_artifact(
+                    project_id=context.project_id,
+                    run_id=context.run_id,
+                    dataset_version_id=context.dataset_version_id,
+                    artifact_type="log",
+                    name="AI 证据解读",
+                    producer="llm_report_narrative",
+                    producer_version=PROMPT_VERSION,
+                    parameters={
+                        "provider": response.provider,
+                        "model": response.model,
+                        "prompt_name": PROMPT_NAME,
+                        "prompt_version": PROMPT_VERSION,
+                        "provider_request_id": response.request_id,
+                        "context_manifest": context.manifest(),
+                        "usage": response.usage.model_dump(),
+                        "latency_ms": response.latency_ms,
+                    },
+                    result=response.content.model_dump(mode="json"),
+                    preview=response.content.model_dump(mode="json"),
+                )
+                uow.jobs.transition(
+                    job,
+                    status="succeeded",
+                    resource_type="artifact",
+                    resource_id=artifact.artifact_id,
+                )
+                uow.audit.append(
+                    action="llm_report_narrative.completed",
+                    result="success",
+                    summary={
+                        "artifact_id": artifact.artifact_id,
+                        "provider": response.provider,
+                        "model": response.model,
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                    },
+                    project_id=context.project_id,
+                    subject_id=job.created_by,
+                    object_type="artifact",
+                    object_id=artifact.artifact_id,
+                    request_id=f"job:{job_id}",
+                )
+        finally:
+            session.close()
+
+    def _load_evidence_context(
+        self,
+        job_id: str,
+        request: dict[str, Any],
+        *,
+        max_chars: int,
+    ) -> EvidenceContext:
+        session = self.database.session()
+        try:
+            job = JobRepository(session).get(job_id)
+            analysis_run = AnalysisRunRepository(session).get(
+                project_id=job.project_id,
+                run_id=str(request["run_id"]),
+            )
+            spec = session.get(AnalysisSpecRow, analysis_run.analysis_spec_revision_id)
+            if spec is None:
+                raise DomainError("STATE_CONFLICT", "分析定义不存在", 409)
+            claim_ids = list(request.get("claim_ids", []))
+            claims = list(
+                session.scalars(
+                    select(ClaimRow)
+                    .where(
+                        ClaimRow.project_id == job.project_id,
+                        ClaimRow.run_id == analysis_run.run_id,
+                        ClaimRow.validation_status == "passed",
+                        ClaimRow.claim_id.in_(claim_ids),
+                    )
+                    .order_by(ClaimRow.created_at.asc())
+                )
+            )
+            evidence_rows = list(
+                session.execute(
+                    select(ClaimEvidenceRow.claim_id, ClaimEvidenceRow.artifact_id)
+                    .where(ClaimEvidenceRow.claim_id.in_([claim.claim_id for claim in claims]))
+                    .order_by(ClaimEvidenceRow.claim_id, ClaimEvidenceRow.position)
+                )
+            )
+            evidence_by_claim: dict[str, list[str]] = {}
+            for claim_id, artifact_id in evidence_rows:
+                evidence_by_claim.setdefault(str(claim_id), []).append(str(artifact_id))
+            artifact_ids = sorted({str(artifact_id) for _, artifact_id in evidence_rows})
+            artifacts = list(
+                session.scalars(
+                    select(ArtifactRow)
+                    .where(
+                        ArtifactRow.project_id == job.project_id,
+                        ArtifactRow.run_id == analysis_run.run_id,
+                        ArtifactRow.dataset_version_id == analysis_run.dataset_version_id,
+                        ArtifactRow.status == "ready",
+                        ArtifactRow.artifact_id.in_(artifact_ids),
+                    )
+                    .order_by(ArtifactRow.created_at.asc())
+                )
+            )
+            return build_evidence_context(
+                project_id=job.project_id,
+                run_id=analysis_run.run_id,
+                dataset_version_id=analysis_run.dataset_version_id,
+                causal_interpretation_allowed=spec.causal_interpretation_allowed,
+                claims=[
+                    {
+                        "claim_id": claim.claim_id,
+                        "text": claim.text,
+                        "level": claim.level,
+                        "evidence_ids": evidence_by_claim.get(claim.claim_id, []),
+                        "limitations": list(claim.limitations_json),
+                    }
+                    for claim in claims
+                ],
+                artifacts=[
+                    {
+                        "artifact_id": artifact.artifact_id,
+                        "artifact_type": artifact.type,
+                        "name": artifact.name,
+                        "producer": artifact.producer,
+                        "producer_version": artifact.producer_version,
+                        "checksum": artifact.checksum,
+                        "result": artifact.result_json,
+                    }
+                    for artifact in artifacts
+                ],
+                max_chars=max_chars,
+            )
+        finally:
+            session.close()
+
     def _render(
         self,
         *,
@@ -193,6 +391,17 @@ class ReportExportWorker:
             "artifact_checksums": {
                 artifact.artifact_id: artifact.checksum for artifact in artifacts
             },
+            "llm_narratives": [
+                {
+                    "artifact_id": artifact.artifact_id,
+                    "provider": artifact.parameters_json.get("provider"),
+                    "model": artifact.parameters_json.get("model"),
+                    "prompt_name": artifact.parameters_json.get("prompt_name"),
+                    "prompt_version": artifact.parameters_json.get("prompt_version"),
+                }
+                for artifact in artifacts
+                if artifact.producer == "llm_report_narrative"
+            ],
         }
         if export_format == "manifest":
             content = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
@@ -204,7 +413,12 @@ class ReportExportWorker:
                 preview=manifest,
             )
         if export_format == "notebook":
-            notebook = self._notebook(manifest, claims, request)
+            notebook = self._notebook(
+                manifest,
+                claims,
+                request,
+                self._latest_narrative(artifacts),
+            )
             content = json.dumps(notebook, ensure_ascii=False, indent=2).encode("utf-8")
             return self._payload(
                 name="分析 Notebook 导出",
@@ -257,11 +471,30 @@ class ReportExportWorker:
             for artifact in artifacts
         )
         manifest_json = html.escape(json.dumps(manifest, ensure_ascii=False, indent=2))
+        narrative = ReportExportWorker._latest_narrative(artifacts)
+        narrative_html = ""
+        if narrative:
+            findings = narrative.get("findings", [])
+            finding_items = "".join(
+                "<li>"
+                + html.escape(str(item.get("text", "")))
+                + "<br><small>引用："
+                + html.escape(", ".join(str(value) for value in item.get("citation_ids", [])))
+                + "</small></li>"
+                for item in findings
+                if isinstance(item, dict)
+            )
+            narrative_html = (
+                "<h2>AI 证据解读</h2>"
+                f"<p>{html.escape(str(narrative.get('summary', '')))}</p>"
+                f"<ol>{finding_items}</ol>"
+            )
         return (
             "<!doctype html><html><head><meta charset='utf-8'><title>AI Data Analyst "
             "Report</title></head><body>"
             f"<h1>分析报告</h1><p>Run: {html.escape(manifest['run_id'])}</p>"
             f"<h2>结论</h2><ol>{claim_items}</ol>"
+            f"{narrative_html}"
             f"<h2>证据 Artifact</h2><ul>{artifact_items}</ul>"
             f"<h2>Manifest</h2><pre>{manifest_json}</pre>"
             "</body></html>"
@@ -272,6 +505,7 @@ class ReportExportWorker:
         manifest: dict[str, Any],
         claims: list[ClaimRow],
         request: dict[str, Any],
+        narrative: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cells: list[dict[str, Any]] = [
             {
@@ -298,6 +532,24 @@ class ReportExportWorker:
                 ],
             },
         ]
+        if narrative:
+            cells.insert(
+                2,
+                {
+                    "cell_type": "markdown",
+                    "metadata": {},
+                    "source": [
+                        "## AI 证据解读\n",
+                        f"{narrative.get('summary', '')}\n",
+                        *[
+                            f"- {item.get('text', '')}"
+                            f"（引用：{', '.join(item.get('citation_ids', []))}）\n"
+                            for item in narrative.get("findings", [])
+                            if isinstance(item, dict)
+                        ],
+                    ],
+                },
+            )
         if request.get("include_code", True):
             cells.append(
                 {
@@ -373,6 +625,16 @@ class ReportExportWorker:
             "nbformat": 4,
             "nbformat_minor": 5,
         }
+
+    @staticmethod
+    def _latest_narrative(artifacts: list[ArtifactRow]) -> dict[str, Any] | None:
+        narratives = [
+            artifact.result_json
+            for artifact in artifacts
+            if artifact.producer == "llm_report_narrative"
+            and isinstance(artifact.result_json, dict)
+        ]
+        return dict(narratives[-1]) if narratives else None
 
     def _fail(self, job_id: str, error: DomainError) -> None:
         session = self.database.session()

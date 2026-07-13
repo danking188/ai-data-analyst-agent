@@ -3,7 +3,14 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ReportExportRequest
-from app.domain.errors import not_found, permission_denied, state_conflict, validation_error
+from app.core.config import get_settings
+from app.domain.errors import (
+    DomainError,
+    not_found,
+    permission_denied,
+    state_conflict,
+    validation_error,
+)
 from app.persistence.repositories.claims import ClaimRepository
 from app.persistence.repositories.projects import ProjectRepository
 from app.persistence.repositories.runs import AnalysisRunRepository
@@ -37,6 +44,12 @@ class ReportService:
         project_id: str,
         payload: ReportExportRequest,
     ) -> list[str]:
+        if payload.format == "ai_narrative" and not get_settings().llm_enabled:
+            raise DomainError(
+                "LLM_DISABLED",
+                "当前部署尚未启用大模型证据解读",
+                409,
+            )
         run = self.runs.get(project_id=project_id, run_id=payload.run_id)
         if run.status != "succeeded":
             raise state_conflict("只有 succeeded AnalysisRun 可以导出报告", status=run.status)

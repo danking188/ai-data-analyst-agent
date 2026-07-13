@@ -95,6 +95,44 @@ class ArtifactRepository:
         self.session.flush()
         return row
 
+    def create_assistant_artifact(
+        self,
+        *,
+        project_id: str,
+        dataset_version_id: str,
+        name: str,
+        producer: str,
+        result: dict[str, Any],
+    ) -> ArtifactRow:
+        canonical = json.dumps(
+            result,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        row = ArtifactRow(
+            artifact_id=new_id("art_"),
+            project_id=project_id,
+            run_id=None,
+            dataset_version_id=dataset_version_id,
+            type="log",
+            name=name,
+            producer=producer,
+            producer_version="1.0.0",
+            status="ready",
+            parameters_json={"source": "assistant"},
+            result_json=result,
+            preview_json=result,
+            storage_key=None,
+            checksum=f"sha256:{hashlib.sha256(canonical).hexdigest()}",
+            downloadable=False,
+            created_at=utc_now(),
+            ready_at=utc_now(),
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
     def create_analysis_artifact(
         self,
         *,
@@ -212,8 +250,7 @@ class ArtifactRepository:
         if artifact_type is not None:
             filters.append(ArtifactRow.type == artifact_type)
         total = int(
-            self.session.scalar(select(func.count()).select_from(ArtifactRow).where(*filters))
-            or 0
+            self.session.scalar(select(func.count()).select_from(ArtifactRow).where(*filters)) or 0
         )
         rows = list(
             self.session.scalars(

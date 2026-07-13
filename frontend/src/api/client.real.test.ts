@@ -132,4 +132,61 @@ describe("apiClient real mode contract calls", () => {
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(headers.get("Idempotency-Key")).toBeTruthy();
   });
+
+  it("submits assistant turns to the conversation-scoped route", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({
+      user_message: null,
+      assistant_message: {
+        message_id: "msg_1",
+        conversation_id: "conv_1",
+        role: "assistant",
+        status: "queued",
+        content: null,
+        plan: null,
+        answer: null,
+        tool_calls: [],
+        parent_message_id: null,
+        job_id: "job_1",
+        created_at: "2026-07-13T00:00:00Z",
+        completed_at: null,
+      },
+      job: null,
+    }, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiClient } = await loadRealClient();
+    await apiClient.createAssistantMessage("prj_1", "conv_1", "检查数据质量");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api.test/api/v1/projects/prj_1/assistant/conversations/conv_1/messages",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ content: "检查数据质量" }),
+      }),
+    );
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Headers;
+    expect(headers.get("Idempotency-Key")).toBeTruthy();
+  });
+
+  it("updates proposed assistant tool arguments through the project route", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      tool_call_id: "tool_1",
+      tool_name: "analysis.run",
+      tool_version: "1.0.0",
+      status: "proposed",
+      requires_confirmation: true,
+      arguments: { run_kind: "model" },
+      result: null,
+      result_resource_type: null,
+      result_resource_id: null,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiClient } = await loadRealClient();
+    await apiClient.updateAssistantToolCall("prj_1", "tool_1", { run_kind: "model" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api.test/api/v1/projects/prj_1/assistant/tool-calls/tool_1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ arguments: { run_kind: "model" } }),
+      }),
+    );
+  });
 });

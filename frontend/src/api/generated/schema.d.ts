@@ -747,6 +747,187 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/assistant/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** 查询 Assistant 运行指标 */
+        get: operations["getAssistantMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** 查询项目内的分析会话 */
+        get: operations["listAssistantConversations"];
+        put?: never;
+        /** 创建分析会话 */
+        post: operations["createAssistantConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        /** 获取分析会话 */
+        get: operations["getAssistantConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 修改或归档分析会话 */
+        patch: operations["updateAssistantConversation"];
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/conversations/{conversation_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        /** 查询分析会话消息 */
+        get: operations["listAssistantMessages"];
+        put?: never;
+        /** 提交自然语言分析问题 */
+        post: operations["createAssistantMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/messages/{message_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 确认或拒绝 Assistant 提出的受控操作 */
+        post: operations["confirmAssistantPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/tool-calls/{tool_call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                tool_call_id: components["parameters"]["AssistantToolCallId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 编辑待确认的受控工具参数 */
+        patch: operations["updateAssistantToolCall"];
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/messages/{message_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重试失败的 Assistant Turn */
+        post: operations["retryAssistantMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/messages/{message_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 取消 Assistant Turn */
+        post: operations["cancelAssistantMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/messages/{message_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交 Assistant 回答反馈 */
+        post: operations["createAssistantFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -816,8 +997,13 @@ export interface components {
             /** @example 524288000 */
             max_upload_bytes: number;
             natural_language_analysis: boolean;
+            llm: components["schemas"]["LLMCapabilities"];
             auth_enabled: boolean;
             polling?: components["schemas"]["PollingPolicy"];
+        };
+        LLMCapabilities: {
+            evidence_narrative: boolean;
+            assistant: boolean;
         };
         LoginRequest: {
             username: string;
@@ -1213,7 +1399,7 @@ export interface components {
         ReportExportRequest: {
             run_id: string;
             /** @enum {string} */
-            format: "html" | "notebook" | "cleaned_data" | "manifest";
+            format: "html" | "notebook" | "cleaned_data" | "manifest" | "ai_narrative";
             claim_ids?: string[];
             /** @default true */
             include_code: boolean;
@@ -1231,11 +1417,159 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
+        AssistantConversationCreate: {
+            title?: string | null;
+            dataset_version_id?: string | null;
+        };
+        AssistantConversationUpdate: {
+            title?: string;
+            /** @enum {string} */
+            status?: "active" | "archived";
+            dataset_version_id?: string | null;
+        };
+        AssistantConversation: {
+            conversation_id: string;
+            project_id: string;
+            title: string;
+            /** @enum {string} */
+            status: "active" | "archived";
+            dataset_version_id: string | null;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            archived_at?: string | null;
+        };
+        AssistantConversationPage: components["schemas"]["PageMeta"] & {
+            items: components["schemas"]["AssistantConversation"][];
+        };
+        AssistantMessageCreate: {
+            content: string;
+        };
+        AssistantPlanStep: {
+            position: number;
+            title: string;
+            tool_name: string | null;
+            purpose: string;
+            requires_confirmation: boolean;
+        };
+        AssistantPlan: {
+            objective: string;
+            dataset_version_id: string | null;
+            steps: components["schemas"]["AssistantPlanStep"][];
+            estimated_model_calls: number;
+            estimated_tool_calls: number;
+            limitations: string[];
+        };
+        AssistantFinding: {
+            text: string;
+            claim_level: number;
+            citation_ids: string[];
+            limitations: string[];
+        };
+        AssistantNextAction: {
+            label: string;
+            /** @enum {string} */
+            action_type: "ask" | "draft_spec" | "run_analysis" | "draft_cleaning" | "export_report";
+            requires_confirmation: boolean;
+        };
+        AssistantAnswer: {
+            summary: string;
+            findings: components["schemas"]["AssistantFinding"][];
+            next_actions: components["schemas"]["AssistantNextAction"][];
+            limitations: string[];
+        };
+        AssistantToolCall: {
+            tool_call_id: string;
+            tool_name: string;
+            tool_version: string;
+            /** @enum {string} */
+            status: "proposed" | "approved" | "running" | "succeeded" | "failed" | "rejected";
+            requires_confirmation: boolean;
+            arguments: {
+                [key: string]: unknown;
+            };
+            result: {
+                [key: string]: unknown;
+            } | null;
+            result_resource_type: string | null;
+            result_resource_id: string | null;
+        };
+        AssistantToolCallUpdate: {
+            arguments: {
+                [key: string]: unknown;
+            };
+        };
+        AssistantMessage: {
+            message_id: string;
+            conversation_id: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system_event" | "tool";
+            /** @enum {string} */
+            status: "queued" | "processing" | "awaiting_confirmation" | "completed" | "failed" | "cancelled";
+            content: string | null;
+            plan: components["schemas"]["AssistantPlan"] | null;
+            answer: components["schemas"]["AssistantAnswer"] | null;
+            tool_calls: components["schemas"]["AssistantToolCall"][];
+            parent_message_id: string | null;
+            job_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        AssistantMessagePage: components["schemas"]["PageMeta"] & {
+            items: components["schemas"]["AssistantMessage"][];
+        };
+        AssistantTurnAccepted: {
+            user_message: components["schemas"]["AssistantMessage"] | null;
+            assistant_message: components["schemas"]["AssistantMessage"];
+            job: components["schemas"]["Job"] | null;
+        };
+        AssistantConfirmationRequest: {
+            /** @enum {string} */
+            decision: "approve" | "reject";
+            tool_call_ids?: string[];
+            reason?: string | null;
+        };
+        AssistantFeedbackRequest: {
+            /** @enum {string} */
+            rating: "helpful" | "not_helpful";
+            /** @enum {string|null} */
+            reason?: "incorrect" | "unsupported" | "incomplete" | "unsafe" | "hard_to_understand" | "other" | null;
+            comment?: string | null;
+        };
+        AssistantFeedback: {
+            feedback_id: string;
+            message_id: string;
+            /** @enum {string} */
+            rating: "helpful" | "not_helpful";
+            reason: string | null;
+            comment: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AssistantMetrics: {
+            window_days: number;
+            turn_count: number;
+            succeeded_count: number;
+            failed_count: number;
+            input_tokens: number;
+            output_tokens: number;
+            average_latency_ms: number;
+            p95_latency_ms: number;
+            tool_call_count: number;
+            tool_succeeded_count: number;
+            tool_failed_count: number;
+            tool_rejected_count: number;
+        };
         Job: {
             /** @example job_01JABC */
             job_id: string;
             /** @enum {string} */
-            kind: "dataset_ingestion" | "version_comparison" | "quality_scan" | "cleaning_preview" | "cleaning_execute" | "analysis_run" | "report_export";
+            kind: "dataset_ingestion" | "version_comparison" | "quality_scan" | "cleaning_preview" | "cleaning_execute" | "analysis_run" | "report_export" | "assistant_turn";
             /** @enum {string} */
             status: "queued" | "running" | "cancelling" | "cancelled" | "blocked" | "succeeded" | "failed";
             progress: number;
@@ -1377,6 +1711,9 @@ export interface components {
     };
     parameters: {
         ProjectId: string;
+        ConversationId: string;
+        AssistantMessageId: string;
+        AssistantToolCallId: string;
         DatasetId: string;
         VersionId: string;
         IssueId: string;
@@ -2739,6 +3076,351 @@ export interface operations {
                     "application/json": components["schemas"]["Job"];
                 };
             };
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getAssistantMetrics: {
+        parameters: {
+            query?: {
+                window_days?: number;
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 项目级 Assistant 运行指标 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMetrics"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listAssistantConversations: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分析会话列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversationPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAssistantConversation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantConversationCreate"];
+            };
+        };
+        responses: {
+            /** @description 会话创建成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversation"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getAssistantConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 会话详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateAssistantConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantConversationUpdate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的会话 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listAssistantMessages: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 消息列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMessagePage"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createAssistantMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 Assistant Turn */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantTurnAccepted"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    confirmAssistantPlan: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantConfirmationRequest"];
+            };
+        };
+        responses: {
+            /** @description 确认结果和可选续跑任务 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantTurnAccepted"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateAssistantToolCall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                tool_call_id: components["parameters"]["AssistantToolCallId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantToolCallUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已重新校验的工具调用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantToolCall"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    retryAssistantMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 新建的重试 Turn */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantTurnAccepted"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelAssistantMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取消后的消息 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMessage"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createAssistantFeedback: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description 反馈已记录 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantFeedback"];
+                };
+            };
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             default: components["responses"]["Error"];
         };

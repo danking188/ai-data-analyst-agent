@@ -172,7 +172,8 @@ class JobRow(Base):
     __table_args__ = (
         CheckConstraint(
             "kind IN ('dataset_ingestion', 'version_comparison', 'quality_scan', "
-            "'cleaning_preview', 'cleaning_execute', 'analysis_run', 'report_export')",
+            "'cleaning_preview', 'cleaning_execute', 'analysis_run', 'report_export', "
+            "'assistant_turn')",
             name="ck_jobs_kind",
         ),
         CheckConstraint(

@@ -30,6 +30,7 @@ class JobKind(StrEnum):
     CLEANING_EXECUTE = "cleaning_execute"
     ANALYSIS_RUN = "analysis_run"
     REPORT_EXPORT = "report_export"
+    ASSISTANT_TURN = "assistant_turn"
 
 
 TERMINAL_JOB_STATUSES = {

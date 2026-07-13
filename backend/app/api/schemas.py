@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.llm.schemas import AssistantAnswer, AssistantPlan
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -47,11 +49,17 @@ class PollingPolicy(BaseModel):
     background_interval_ms: int
 
 
+class LLMCapabilities(BaseModel):
+    evidence_narrative: bool
+    assistant: bool
+
+
 class SystemCapabilities(BaseModel):
     api_version: str
     supported_file_types: list[Literal["csv", "xls", "xlsx", "parquet"]]
     max_upload_bytes: int
     natural_language_analysis: bool
+    llm: LLMCapabilities
     auth_enabled: bool
     polling: PollingPolicy
 
@@ -679,7 +687,7 @@ class ClaimPage(BaseModel):
 
 class ReportExportRequest(StrictModel):
     run_id: str
-    format: Literal["html", "notebook", "cleaned_data", "manifest"]
+    format: Literal["html", "notebook", "cleaned_data", "manifest", "ai_narrative"]
     claim_ids: list[str] | None = None
     include_code: bool = True
     include_evidence: bool = True
@@ -702,6 +710,154 @@ class Download(BaseModel):
     expires_at: datetime
 
 
+class AssistantConversationCreate(StrictModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    dataset_version_id: str | None = None
+
+
+class AssistantConversationUpdate(StrictModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    status: Literal["active", "archived"] | None = None
+    dataset_version_id: str | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> AssistantConversationUpdate:
+        if not self.model_fields_set:
+            raise ValueError("at least one field is required")
+        return self
+
+
+class AssistantConversation(BaseModel):
+    conversation_id: str
+    project_id: str
+    title: str
+    status: Literal["active", "archived"]
+    dataset_version_id: str | None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived_at: datetime | None
+
+
+class AssistantConversationPage(BaseModel):
+    items: list[AssistantConversation]
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+
+
+class AssistantMessageCreate(StrictModel):
+    content: str = Field(min_length=1, max_length=12000)
+
+    @field_validator("content")
+    @classmethod
+    def strip_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("content must not be blank")
+        return value
+
+
+class AssistantToolCall(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    tool_version: str
+    status: Literal["proposed", "approved", "running", "succeeded", "failed", "rejected"]
+    requires_confirmation: bool
+    arguments: dict[str, Any]
+    result: dict[str, Any] | None
+    result_resource_type: str | None
+    result_resource_id: str | None
+
+
+class AssistantToolCallUpdate(StrictModel):
+    arguments: dict[str, Any]
+
+
+class AssistantMessage(BaseModel):
+    message_id: str
+    conversation_id: str
+    role: Literal["user", "assistant", "system_event", "tool"]
+    status: Literal[
+        "queued",
+        "processing",
+        "awaiting_confirmation",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
+    content: str | None
+    plan: AssistantPlan | None
+    answer: AssistantAnswer | None
+    tool_calls: list[AssistantToolCall]
+    parent_message_id: str | None
+    job_id: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class AssistantMessagePage(BaseModel):
+    items: list[AssistantMessage]
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+
+
+class AssistantConfirmationRequest(StrictModel):
+    decision: Literal["approve", "reject"]
+    tool_call_ids: list[str] = Field(default_factory=list, max_length=8)
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("tool_call_ids")
+    @classmethod
+    def unique_tool_calls(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("tool_call_ids must be unique")
+        return value
+
+
+class AssistantFeedbackRequest(StrictModel):
+    rating: Literal["helpful", "not_helpful"]
+    reason: (
+        Literal[
+            "incorrect",
+            "unsupported",
+            "incomplete",
+            "unsafe",
+            "hard_to_understand",
+            "other",
+        ]
+        | None
+    ) = None
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class AssistantFeedback(BaseModel):
+    feedback_id: str
+    message_id: str
+    rating: Literal["helpful", "not_helpful"]
+    reason: str | None
+    comment: str | None
+    created_at: datetime
+
+
+class AssistantMetrics(BaseModel):
+    window_days: int = Field(ge=1, le=90)
+    turn_count: int = Field(ge=0)
+    succeeded_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    average_latency_ms: int = Field(ge=0)
+    p95_latency_ms: int = Field(ge=0)
+    tool_call_count: int = Field(ge=0)
+    tool_succeeded_count: int = Field(ge=0)
+    tool_failed_count: int = Field(ge=0)
+    tool_rejected_count: int = Field(ge=0)
+
+
 class JobError(BaseModel):
     code: str
     message: str
@@ -720,6 +876,7 @@ class Job(BaseModel):
         "cleaning_execute",
         "analysis_run",
         "report_export",
+        "assistant_turn",
     ]
     status: Literal[
         "queued",
@@ -738,3 +895,9 @@ class Job(BaseModel):
     created_at: datetime
     updated_at: datetime
     error: JobError | None
+
+
+class AssistantTurnAccepted(BaseModel):
+    user_message: AssistantMessage | None
+    assistant_message: AssistantMessage
+    job: Job | None

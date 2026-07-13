@@ -4,6 +4,12 @@ import type {
   AnalysisSpec,
   AnalysisSpecInput,
   AnalysisRun,
+  AssistantConversation,
+  AssistantFeedback,
+  AssistantMessage,
+  AssistantMetrics,
+  AssistantToolCall,
+  AssistantTurnAccepted,
   Artifact,
   Claim,
   CleaningOperation,
@@ -22,6 +28,7 @@ import type {
   ReportExportInput,
   SchemaPatch,
   SessionInfo,
+  SystemCapabilities,
 } from "./contracts";
 import { jobSchema, projectPageSchema, projectSchema } from "./validators";
 
@@ -66,6 +73,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const apiClient = {
   mode: API_MODE,
+
+  getCapabilities(): Promise<SystemCapabilities> {
+    if (API_MODE === "mock") return mockApi.getCapabilities();
+    return request("/system/capabilities");
+  },
 
   login(username: string, password: string): Promise<SessionInfo> {
     if (API_MODE === "mock") return mockApi.login(username);
@@ -362,6 +374,117 @@ export const apiClient = {
     if (API_MODE === "mock") return mockApi.createReportExport(input);
     return request(`/projects/${projectId}/reports`, {
       method: "POST", headers: { "Idempotency-Key": idempotencyKey() }, body: JSON.stringify(input),
+    });
+  },
+
+  listAssistantConversations(projectId: string): Promise<Page<AssistantConversation>> {
+    if (API_MODE === "mock") return mockApi.listAssistantConversations(projectId);
+    return request(`/projects/${projectId}/assistant/conversations?page=1&page_size=50`);
+  },
+
+  getAssistantMetrics(projectId: string): Promise<AssistantMetrics> {
+    if (API_MODE === "mock") return mockApi.getAssistantMetrics(projectId);
+    return request(`/projects/${projectId}/assistant/metrics?window_days=7`);
+  },
+
+  createAssistantConversation(
+    projectId: string,
+    input: { title?: string | null; dataset_version_id?: string | null },
+  ): Promise<AssistantConversation> {
+    if (API_MODE === "mock") return mockApi.createAssistantConversation(projectId, input);
+    return request(`/projects/${projectId}/assistant/conversations`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateAssistantConversation(
+    projectId: string,
+    conversationId: string,
+    input: { title?: string; status?: "active" | "archived"; dataset_version_id?: string | null },
+  ): Promise<AssistantConversation> {
+    if (API_MODE === "mock") return mockApi.updateAssistantConversation(conversationId, input);
+    return request(`/projects/${projectId}/assistant/conversations/${conversationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
+  listAssistantMessages(projectId: string, conversationId: string): Promise<Page<AssistantMessage>> {
+    if (API_MODE === "mock") return mockApi.listAssistantMessages(conversationId);
+    return request(
+      `/projects/${projectId}/assistant/conversations/${conversationId}/messages?page=1&page_size=100`,
+    );
+  },
+
+  createAssistantMessage(
+    projectId: string,
+    conversationId: string,
+    content: string,
+  ): Promise<AssistantTurnAccepted> {
+    if (API_MODE === "mock") return mockApi.createAssistantMessage(projectId, conversationId, content);
+    return request(`/projects/${projectId}/assistant/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  confirmAssistantPlan(
+    projectId: string,
+    messageId: string,
+    decision: "approve" | "reject",
+    toolCallIds: string[] = [],
+  ): Promise<AssistantTurnAccepted> {
+    if (API_MODE === "mock") return mockApi.confirmAssistantPlan(messageId, decision, toolCallIds);
+    return request(`/projects/${projectId}/assistant/messages/${messageId}/confirm`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+      body: JSON.stringify({ decision, tool_call_ids: toolCallIds, reason: null }),
+    });
+  },
+
+  updateAssistantToolCall(
+    projectId: string,
+    toolCallId: string,
+    argumentsValue: Record<string, unknown>,
+  ): Promise<AssistantToolCall> {
+    if (API_MODE === "mock") {
+      return mockApi.updateAssistantToolCall(toolCallId, argumentsValue);
+    }
+    return request(`/projects/${projectId}/assistant/tool-calls/${toolCallId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ arguments: argumentsValue }),
+    });
+  },
+
+  cancelAssistantMessage(projectId: string, messageId: string): Promise<AssistantMessage> {
+    if (API_MODE === "mock") return mockApi.cancelAssistantMessage(messageId);
+    return request(`/projects/${projectId}/assistant/messages/${messageId}/cancel`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+    });
+  },
+
+  retryAssistantMessage(projectId: string, messageId: string): Promise<AssistantTurnAccepted> {
+    if (API_MODE === "mock") return mockApi.retryAssistantMessage(messageId);
+    return request(`/projects/${projectId}/assistant/messages/${messageId}/retry`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+    });
+  },
+
+  createAssistantFeedback(
+    projectId: string,
+    messageId: string,
+    rating: "helpful" | "not_helpful",
+  ): Promise<AssistantFeedback> {
+    if (API_MODE === "mock") return mockApi.createAssistantFeedback(messageId, rating);
+    return request(`/projects/${projectId}/assistant/messages/${messageId}/feedback`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+      body: JSON.stringify({ rating, reason: null, comment: null }),
     });
   },
 };

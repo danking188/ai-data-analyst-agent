@@ -19,4 +19,8 @@ export const queryKeys = {
     ["projects", projectId, "versions", versionId, "analysis-specs"] as const,
   claims: (projectId: string, runId: string) =>
     ["projects", projectId, "runs", runId, "claims"] as const,
+  assistantConversations: (projectId: string) =>
+    ["projects", projectId, "assistant", "conversations"] as const,
+  assistantMessages: (projectId: string, conversationId: string) =>
+    ["projects", projectId, "assistant", "conversations", conversationId, "messages"] as const,
 };

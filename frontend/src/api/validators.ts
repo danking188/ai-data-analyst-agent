@@ -39,6 +39,7 @@ export const jobSchema = z.object({
     "cleaning_execute",
     "analysis_run",
     "report_export",
+    "assistant_turn",
   ]),
   status: z.enum(["queued", "running", "cancelling", "cancelled", "blocked", "succeeded", "failed"]),
   progress: z.number().int().min(0).max(100),

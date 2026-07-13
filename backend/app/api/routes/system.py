@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app import __version__
 from app.api.schemas import (
     Health,
+    LLMCapabilities,
     PollingPolicy,
     Readiness,
     ReadinessDependency,
@@ -67,7 +68,11 @@ def get_capabilities(
         api_version="v1",
         supported_file_types=["csv", "xls", "xlsx", "parquet"],
         max_upload_bytes=settings.max_upload_bytes,
-        natural_language_analysis=False,
+        natural_language_analysis=settings.llm_enabled,
+        llm=LLMCapabilities(
+            evidence_narrative=settings.llm_enabled,
+            assistant=settings.llm_enabled,
+        ),
         auth_enabled=settings.auth_enabled,
         polling=PollingPolicy(
             initial_interval_ms=1000,

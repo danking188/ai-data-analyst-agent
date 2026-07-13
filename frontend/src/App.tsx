@@ -7,6 +7,7 @@ import { ModelPage } from "./features/model/ModelPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { QualityPage } from "./features/quality/QualityPage";
 import { ReportPage } from "./features/report/ReportPage";
+import { AssistantPage } from "./features/assistant/AssistantPage";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route element={<ExplorePage />} path="/explore" />
         <Route element={<ModelPage />} path="/model" />
         <Route element={<ReportPage />} path="/report" />
+        <Route element={<AssistantPage />} path="/assistant" />
         <Route element={<Navigate replace to="/" />} path="*" />
       </Routes>
     </AppShell>

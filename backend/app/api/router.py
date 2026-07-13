@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     analysis_specs,
+    assistant,
     auth,
     cleaning,
     datasets,
@@ -24,6 +25,7 @@ api_router.include_router(schemas.router)
 api_router.include_router(quality.router)
 api_router.include_router(cleaning.router)
 api_router.include_router(analysis_specs.router)
+api_router.include_router(assistant.router)
 api_router.include_router(runs.router)
 api_router.include_router(evidence.router)
 api_router.include_router(reports.router)

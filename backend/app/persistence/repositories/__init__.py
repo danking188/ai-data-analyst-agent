@@ -2,6 +2,7 @@
 
 from app.persistence.repositories.analysis_specs import AnalysisSpecRepository
 from app.persistence.repositories.artifacts import ArtifactRepository
+from app.persistence.repositories.assistant import AssistantRepository
 from app.persistence.repositories.audit import AuditRepository
 from app.persistence.repositories.claims import ClaimRepository
 from app.persistence.repositories.cleaning import CleaningPlanRepository
@@ -19,8 +20,9 @@ from app.persistence.repositories.schemas import ColumnSchemaRepository
 from app.persistence.repositories.users import UserRepository
 
 __all__ = [
-    "AnalysisSpecRepository",
     "AnalysisRunRepository",
+    "AnalysisSpecRepository",
+    "AssistantRepository",
     "AuditRepository",
     "ArtifactRepository",
     "CleaningPlanRepository",

@@ -13,6 +13,8 @@ from app.persistence.orm.models import JobRow
 from app.persistence.session import Database, get_database
 from app.storage.files import FileStorage, get_file_storage
 from app.workers.analysis import AnalysisRunWorker
+from app.workers.assistant import AssistantTurnWorker
+from app.workers.assistant_retention import AssistantRetentionWorker
 from app.workers.cleaning import CleaningExecuteWorker, CleaningPreviewWorker
 from app.workers.comparison import VersionComparisonWorker
 from app.workers.ingestion import DatasetIngestionWorker
@@ -38,6 +40,7 @@ SUPPORTED_JOB_KINDS = (
     "analysis_run",
     "version_comparison",
     "report_export",
+    "assistant_turn",
 )
 
 
@@ -72,10 +75,9 @@ def build_workers(
             default_tool_registry,
             worker_id=worker_id,
         ),
-        "version_comparison": VersionComparisonWorker(
-            database, storage, worker_id=worker_id
-        ),
+        "version_comparison": VersionComparisonWorker(database, storage, worker_id=worker_id),
         "report_export": ReportExportWorker(database, storage, worker_id=worker_id),
+        "assistant_turn": AssistantTurnWorker(database, worker_id=worker_id),
     }
 
 
@@ -98,8 +100,15 @@ def main() -> None:
     )
     if args.once:
         run_once(database, workers)
+        AssistantRetentionWorker(database).run()
         return
+    retention = AssistantRetentionWorker(database)
+    next_retention_at = 0.0
     while True:
+        now = time.monotonic()
+        if now >= next_retention_at:
+            retention.run()
+            next_retention_at = now + 3600
         if not run_once(database, workers):
             time.sleep(max(args.poll_seconds, 0.1))
 

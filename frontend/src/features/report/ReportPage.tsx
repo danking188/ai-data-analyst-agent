@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, CheckCircle2, ChevronRight, Download, FileArchive, FileCode2, FileText, Link2, Table2, X } from "lucide-react";
+import { BarChart3, CheckCircle2, ChevronRight, Download, FileArchive, FileCode2, FileText, Link2, Sparkles, Table2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../../api/client";
 import type { Artifact, Claim, ReportExportInput } from "../../api/contracts";
@@ -39,6 +39,8 @@ export function ReportPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [format, setFormat] = useState<ReportExportInput["format"]>("html");
   const [exportJobId, setExportJobId] = useState<string | null>(null);
+  const [narrativeJobId, setNarrativeJobId] = useState<string | null>(null);
+  const capabilitiesQuery = useQuery({ queryKey: ["system", "capabilities"], queryFn: () => apiClient.getCapabilities() });
   const runsQuery = useQuery({ queryKey: queryKeys.runs(project?.project_id ?? "none"), queryFn: () => apiClient.listRuns(project!.project_id), enabled: Boolean(project) });
   const run = runsQuery.data?.items.find((item) => item.status === "succeeded");
   const claimsQuery = useQuery({ queryKey: queryKeys.claims(project?.project_id ?? "none", run?.run_id ?? "none"), queryFn: () => apiClient.listClaims(project!.project_id, run!.run_id), enabled: Boolean(project && run) });
@@ -63,6 +65,22 @@ export function ReportPage() {
     pushToast(`已生成并下载 ${download.file_name}`);
     queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(project!.project_id, run!.run_id) });
   });
+  const narrativeMutation = useMutation({
+    mutationFn: () => apiClient.createReportExport(project!.project_id, {
+      run_id: run!.run_id,
+      format: "ai_narrative",
+      claim_ids: publishableClaims.map((item) => item.claim_id),
+      include_code: false,
+      include_evidence: true,
+      data_format: null,
+    }),
+    onSuccess: (job) => setNarrativeJobId(job.job_id),
+    onError: (error) => pushToast(error instanceof Error ? error.message : "AI 解读任务创建失败"),
+  });
+  const narrativePolling = useJobPolling(narrativeJobId, async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(project!.project_id, run!.run_id) });
+    pushToast("AI 证据解读已生成");
+  });
   const artifacts = artifactsQuery.data?.items ?? [];
   const evidenceArtifacts = artifacts.filter((item) => selectedClaim?.evidence_ids.includes(item.artifact_id));
   if (runsQuery.isLoading || claimsQuery.isLoading || artifactsQuery.isLoading) return <LoadingBlock rows={10} />;
@@ -71,10 +89,24 @@ export function ReportPage() {
   const modelResult = asObject(artifacts.find((item) => item.type === "model")?.result);
   const modelMetrics = asObject(asObject(artifacts.find((item) => item.type === "metric" && "metrics" in asObject(item.result))?.result).metrics);
   const limitations = [...new Set(publishableClaims.flatMap((claim) => claim.limitations))];
+  const narrativeArtifact = artifacts.filter((item) => item.producer === "llm_report_narrative").at(-1);
+  const narrative = asObject(narrativeArtifact?.result);
+  const narrativeFindings = Array.isArray(narrative.findings)
+    ? narrative.findings.map(asObject).filter((item) => typeof item.text === "string")
+    : [];
+  const llmEnabled = capabilitiesQuery.data?.llm.evidence_narrative === true;
+  const openCitation = (citationId: string) => {
+    const claim = publishableClaims.find((item) => item.claim_id === citationId || item.evidence_ids.includes(citationId));
+    if (claim) {
+      setSelectedClaim(claim);
+      setEvidenceOpen(true);
+    }
+  };
   return (
     <div className={`report-workspace ${evidenceOpen ? "has-evidence" : ""} ${exportOpen ? "has-export" : ""}`}>
       <article className="report-document">
-        <header className="report-header"><div><h1>分析报告</h1><p>{project?.name ?? "数据分析项目"} · 运行 {run.run_id}</p><small>完成时间：{run.completed_at ? formatDateTime(run.completed_at) : "-"} · 数据版本：{run.dataset_version_id}</small></div><div><Button icon={<FileText size={16} />} onClick={() => { setFormat("html"); setExportOpen(true); }}>导出报告</Button><Button icon={<Download size={16} />} onClick={() => { setFormat("manifest"); setExportOpen(true); }} variant="primary">下载证据包</Button></div></header>
+        <header className="report-header"><div><h1>分析报告</h1><p>{project?.name ?? "数据分析项目"} · 运行 {run.run_id}</p><small>完成时间：{run.completed_at ? formatDateTime(run.completed_at) : "-"} · 数据版本：{run.dataset_version_id}</small></div><div>{llmEnabled ? <Button disabled={narrativeMutation.isPending || Boolean(narrativePolling.job && !narrativePolling.isTerminal)} icon={<Sparkles size={16} />} onClick={() => narrativeMutation.mutate()}>{narrativePolling.job && !narrativePolling.isTerminal ? `解读中 ${narrativePolling.job.progress}%` : narrativeArtifact ? "重新解读" : "AI 解读"}</Button> : null}<Button icon={<FileText size={16} />} onClick={() => { setFormat("html"); setExportOpen(true); }}>导出报告</Button><Button icon={<Download size={16} />} onClick={() => { setFormat("manifest"); setExportOpen(true); }} variant="primary">下载证据包</Button></div></header>
+        {narrativeArtifact ? <section className="report-section ai-narrative"><header><div><Sparkles size={17} /><h2>AI 证据解读</h2></div><small>{String(asObject(narrativeArtifact.parameters).model ?? "-")} · {String(asObject(narrativeArtifact.parameters).prompt_version ?? narrativeArtifact.producer_version)}</small></header><p>{String(narrative.summary ?? "")}</p>{narrativeFindings.length ? <ol>{narrativeFindings.map((finding, index) => <li key={`${index}-${String(finding.text)}`}><p>{String(finding.text)}</p><div>{Array.isArray(finding.citation_ids) ? finding.citation_ids.map((citation) => <button key={String(citation)} onClick={() => openCitation(String(citation))}><Link2 size={12} />{String(citation)}</button>) : null}</div></li>)}</ol> : null}</section> : null}
         <section className="report-section"><h2>1. 经验证结论</h2>{publishableClaims.length ? <div className="claim-list">{publishableClaims.map((claim, index) => <button className={selectedClaim?.claim_id === claim.claim_id ? "is-selected" : ""} key={claim.claim_id} onClick={() => { setSelectedClaim(claim); setEvidenceOpen(true); }}><b>{index + 1}</b><StatusBadge status={claim.validation_status} /><span>{claim.text}<small>局限：{claim.limitations[0] ?? "无补充限制"}</small></span><em>证据 {claim.evidence_ids.length}</em><ChevronRight size={16} /></button>)}</div> : <EmptyState title="暂无通过验证的结论" description="验证失败或缺少证据的结论不会进入正式报告。" />}</section>
         <section className="report-section prose">
           <h2>2. 数据概况</h2><table><tbody>{Object.entries(datasetOverview).map(([key, value]) => <tr key={key}><th>{key.replaceAll("_", " ")}</th><td>{displayValue(value)}</td></tr>)}</tbody></table>

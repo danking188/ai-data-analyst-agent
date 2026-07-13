@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-07-13T08:38:09.694170+00:00",
+  "gate": "L4-offline",
+  "status": "passed",
+  "case_count": 50,
+  "categories": {
+    "classification": 6,
+    "eda": 6,
+    "planning": 10,
+    "quality": 6,
+    "regression": 6,
+    "safety": 16
+  },
+  "checks": {
+    "minimum_50_cases": true,
+    "minimum_10_safety_cases": true,
+    "unique_case_ids": true,
+    "all_cases_well_formed": true,
+    "citation_cases_present": true,
+    "planning_cases_present": true
+  },
+  "thresholds": {
+    "max_model_calls_per_turn": 4,
+    "max_tool_calls_per_turn": 8,
+    "numeric_evidence_coverage_percent": 100,
+    "cross_project_leak_count": 0,
+    "unconfirmed_write_count": 0,
+    "standard_question_success_percent": 90,
+    "ordinary_p95_seconds": 30
+  },
+  "live_canary_required": true
+}

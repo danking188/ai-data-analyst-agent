@@ -299,9 +299,7 @@ def _classification_metrics(model: Any, features: pd.DataFrame, truth: pd.Series
                 positive = model.classes_[1]
                 binary_truth = (np.asarray(truth) == positive).astype(int)
                 metrics["roc_auc"] = _round(roc_auc_score(binary_truth, probability[:, 1]))
-                metrics["pr_auc"] = _round(
-                    average_precision_score(binary_truth, probability[:, 1])
-                )
+                metrics["pr_auc"] = _round(average_precision_score(binary_truth, probability[:, 1]))
                 metrics["positive_class"] = str(positive)
             elif len(model.classes_) > 2:
                 metrics["roc_auc"] = _round(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path, PurePath
 
@@ -52,6 +52,27 @@ class Settings:
     session_cookie_secure: bool
     session_ttl_seconds: int
     cors_origins: tuple[str, ...]
+    llm_enabled: bool
+    llm_provider: str
+    llm_api_base: str | None
+    llm_api_key: str | None = field(repr=False)
+    llm_model: str | None
+    llm_structured_output_mode: str
+    llm_temperature: float
+    llm_timeout_seconds: int
+    llm_max_output_tokens: int
+    llm_max_input_tokens: int
+    llm_max_calls_per_turn: int
+    llm_max_tool_calls_per_turn: int
+    llm_max_retries: int
+    llm_daily_token_budget_per_user: int
+    llm_max_concurrent_turns_per_project: int
+    llm_circuit_breaker_failure_threshold: int
+    llm_circuit_breaker_cooldown_seconds: int
+    llm_allow_masked_samples: bool
+    llm_retention_days: int
+    llm_archive_inactive_days: int
+    llm_canary_subjects: tuple[str, ...]
 
     @property
     def auth_enabled(self) -> bool:
@@ -68,9 +89,7 @@ def get_settings() -> Settings:
         database_pool_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
         database_max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "10")),
         database_pool_recycle_seconds=int(os.getenv("DATABASE_POOL_RECYCLE_SECONDS", "300")),
-        require_external_persistence=os.getenv(
-            "REQUIRE_EXTERNAL_PERSISTENCE", "false"
-        ).lower()
+        require_external_persistence=os.getenv("REQUIRE_EXTERNAL_PERSISTENCE", "false").lower()
         in {"1", "true", "yes"},
         job_execution_mode=os.getenv("JOB_EXECUTION_MODE", "background").lower(),
         data_root=Path(os.getenv("DATA_ROOT", "./data")).resolve(),
@@ -107,6 +126,38 @@ def get_settings() -> Settings:
             for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
             if origin.strip()
         ),
+        llm_enabled=os.getenv("LLM_ENABLED", "false").lower() in {"1", "true", "yes"},
+        llm_provider=os.getenv("LLM_PROVIDER", "openai_compatible").lower(),
+        llm_api_base=os.getenv("LLM_API_BASE") or None,
+        llm_api_key=os.getenv("LLM_API_KEY") or None,
+        llm_model=os.getenv("LLM_MODEL") or None,
+        llm_structured_output_mode=os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").lower(),
+        llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
+        llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
+        llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096")),
+        llm_max_input_tokens=int(os.getenv("LLM_MAX_INPUT_TOKENS", "24000")),
+        llm_max_calls_per_turn=int(os.getenv("LLM_MAX_CALLS_PER_TURN", "4")),
+        llm_max_tool_calls_per_turn=int(os.getenv("LLM_MAX_TOOL_CALLS_PER_TURN", "8")),
+        llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "2")),
+        llm_daily_token_budget_per_user=int(os.getenv("LLM_DAILY_TOKEN_BUDGET_PER_USER", "200000")),
+        llm_max_concurrent_turns_per_project=int(
+            os.getenv("LLM_MAX_CONCURRENT_TURNS_PER_PROJECT", "2")
+        ),
+        llm_circuit_breaker_failure_threshold=int(
+            os.getenv("LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
+        ),
+        llm_circuit_breaker_cooldown_seconds=int(
+            os.getenv("LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "60")
+        ),
+        llm_allow_masked_samples=os.getenv("LLM_ALLOW_MASKED_SAMPLES", "false").lower()
+        in {"1", "true", "yes"},
+        llm_retention_days=int(os.getenv("LLM_RETENTION_DAYS", "30")),
+        llm_archive_inactive_days=int(os.getenv("LLM_ARCHIVE_INACTIVE_DAYS", "90")),
+        llm_canary_subjects=tuple(
+            subject.strip()
+            for subject in os.getenv("LLM_CANARY_SUBJECTS", "").split(",")
+            if subject.strip()
+        ),
     )
     if settings.auth_mode not in {"dev_token", "jwt"}:
         raise ValueError("AUTH_MODE must be dev_token or jwt")
@@ -138,16 +189,12 @@ def get_settings() -> Settings:
         ):
             raise ValueError("S3_ENDPOINT_URL must use HTTPS in production")
     if settings.require_external_persistence:
-        if not settings.database_url.startswith(
-            ("postgres://", "postgresql://", "postgresql+")
-        ):
+        if not settings.database_url.startswith(("postgres://", "postgresql://", "postgresql+")):
             raise ValueError(
                 "DATABASE_URL must use PostgreSQL when external persistence is required"
             )
         if settings.storage_backend != "s3":
-            raise ValueError(
-                "STORAGE_BACKEND must be s3 when external persistence is required"
-            )
+            raise ValueError("STORAGE_BACKEND must be s3 when external persistence is required")
     if settings.session_ttl_seconds <= 0:
         raise ValueError("SESSION_TTL_SECONDS must be positive")
     if settings.auth_mode == "jwt" and not settings.login_password:
@@ -161,4 +208,42 @@ def get_settings() -> Settings:
             raise ValueError(
                 "LOGIN_PASSWORD must be a non-placeholder password of at least 12 characters"
             )
+    if settings.llm_provider not in {"openai_compatible", "fake"}:
+        raise ValueError("LLM_PROVIDER must be openai_compatible or fake")
+    if settings.llm_structured_output_mode not in {"json_schema", "json_object", "prompt"}:
+        raise ValueError("LLM_STRUCTURED_OUTPUT_MODE must be json_schema, json_object, or prompt")
+    if not 0 <= settings.llm_temperature <= 2:
+        raise ValueError("LLM_TEMPERATURE must be between 0 and 2")
+    positive_llm_limits = {
+        "LLM_TIMEOUT_SECONDS": settings.llm_timeout_seconds,
+        "LLM_MAX_OUTPUT_TOKENS": settings.llm_max_output_tokens,
+        "LLM_MAX_INPUT_TOKENS": settings.llm_max_input_tokens,
+        "LLM_MAX_CALLS_PER_TURN": settings.llm_max_calls_per_turn,
+        "LLM_MAX_TOOL_CALLS_PER_TURN": settings.llm_max_tool_calls_per_turn,
+        "LLM_DAILY_TOKEN_BUDGET_PER_USER": settings.llm_daily_token_budget_per_user,
+        "LLM_MAX_CONCURRENT_TURNS_PER_PROJECT": settings.llm_max_concurrent_turns_per_project,
+        "LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD": settings.llm_circuit_breaker_failure_threshold,
+        "LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS": settings.llm_circuit_breaker_cooldown_seconds,
+        "LLM_RETENTION_DAYS": settings.llm_retention_days,
+        "LLM_ARCHIVE_INACTIVE_DAYS": settings.llm_archive_inactive_days,
+    }
+    for name, value in positive_llm_limits.items():
+        if value <= 0:
+            raise ValueError(f"{name} must be positive")
+    if settings.llm_max_retries < 0:
+        raise ValueError("LLM_MAX_RETRIES must not be negative")
+    if settings.llm_enabled:
+        if settings.llm_provider == "fake" and settings.app_env == "production":
+            raise ValueError("LLM_PROVIDER=fake is not allowed in production")
+        if settings.llm_provider == "openai_compatible":
+            if not settings.llm_api_base:
+                raise ValueError("LLM_API_BASE is required when LLM is enabled")
+            if not settings.llm_api_key:
+                raise ValueError("LLM_API_KEY is required when LLM is enabled")
+            if not settings.llm_model:
+                raise ValueError("LLM_MODEL is required when LLM is enabled")
+            if settings.app_env == "production" and not settings.llm_api_base.startswith(
+                "https://"
+            ):
+                raise ValueError("LLM_API_BASE must use HTTPS in production")
     return settings

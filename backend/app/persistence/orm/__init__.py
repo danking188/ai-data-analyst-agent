@@ -1,3 +1,10 @@
+from app.persistence.orm.assistant_models import (
+    AssistantConversationRow,
+    AssistantFeedbackRow,
+    AssistantMessageRow,
+    LLMRunRow,
+    LLMToolCallRow,
+)
 from app.persistence.orm.models import (
     AuditLogRow,
     Base,
@@ -26,6 +33,9 @@ from app.persistence.orm.workflow_models import (
 )
 
 __all__ = [
+    "AssistantConversationRow",
+    "AssistantFeedbackRow",
+    "AssistantMessageRow",
     "AuditLogRow",
     "AnalysisRunRow",
     "AnalysisSpecRow",
@@ -42,6 +52,8 @@ __all__ = [
     "DatasetVersionRow",
     "IdempotencyKeyRow",
     "JobRow",
+    "LLMRunRow",
+    "LLMToolCallRow",
     "ProjectMemberRow",
     "ProjectRow",
     "QualityIssueRow",

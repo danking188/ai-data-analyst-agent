@@ -4,8 +4,10 @@ import pytest
 from sqlalchemy import select
 
 from app.analysis.tool_registry import ToolRegistry
+from app.core.config import get_settings
 from app.core.ids import new_id
 from app.domain.errors import DomainError
+from app.llm.provider import FakeLLMProvider
 from app.persistence.orm.workflow_models import AnalysisSpecRow
 from app.persistence.repositories.claims import ClaimRepository
 from app.persistence.session import get_database
@@ -39,6 +41,7 @@ def test_analysis_run_create_execute_get_and_list(
     app_client,
     auth_headers: dict[str, str],
     create_project,
+    monkeypatch,
 ) -> None:
     contract = load_contract()
     project = create_project(key="analysis-run-project")
@@ -181,6 +184,59 @@ def test_analysis_run_create_execute_get_and_list(
     assert_matches_schema(contract, "Claim", fetched_claim.json())
     assert fetched_claim.json()["evidence_ids"]
 
+    narrative_claim = claim_page["items"][0]
+    fake_provider = FakeLLMProvider(
+        [
+            {
+                "summary": "当前分析已经形成可验证的业务结论。",
+                "findings": [
+                    {
+                        "text": narrative_claim["text"],
+                        "claim_level": narrative_claim["level"],
+                        "citation_ids": [narrative_claim["claim_id"]],
+                        "limitations": narrative_claim["limitations"],
+                    }
+                ],
+                "next_actions": [],
+                "limitations": narrative_claim["limitations"],
+            }
+        ]
+    )
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    monkeypatch.setenv("LLM_MODEL", "fake-analysis")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.workers.reports.get_llm_provider",
+        lambda: fake_provider,
+    )
+    narrative_export = app_client.post(
+        f"/api/v1/projects/{project_id}/reports",
+        headers={**auth_headers, "Idempotency-Key": "report-ai-narrative"},
+        json={
+            "run_id": job["resource_id"],
+            "format": "ai_narrative",
+            "claim_ids": [claim["claim_id"] for claim in claim_page["items"]],
+            "include_code": False,
+            "include_evidence": True,
+        },
+    )
+    assert narrative_export.status_code == 202, narrative_export.text
+    narrative_job = app_client.get(
+        f"/api/v1/jobs/{narrative_export.json()['job_id']}",
+        headers=auth_headers,
+    ).json()
+    assert narrative_job["status"] == "succeeded"
+    narrative_artifact = app_client.get(
+        f"/api/v1/projects/{project_id}/artifacts/{narrative_job['resource_id']}",
+        headers=auth_headers,
+    ).json()
+    assert narrative_artifact["type"] == "log"
+    assert narrative_artifact["producer"] == "llm_report_narrative"
+    assert narrative_artifact["result"]["findings"][0]["citation_ids"] == [
+        narrative_claim["claim_id"]
+    ]
+
     export = app_client.post(
         f"/api/v1/projects/{project_id}/reports",
         headers={**auth_headers, "Idempotency-Key": "report-export-html"},
@@ -220,6 +276,7 @@ def test_analysis_run_create_execute_get_and_list(
     assert downloaded_file.status_code == 200
     assert downloaded_file.headers["content-type"].startswith("text/html")
     assert b"AI Data Analyst" in downloaded_file.content
+    assert "AI 证据解读".encode() in downloaded_file.content
 
     replay = app_client.post(
         url,
@@ -237,6 +294,7 @@ def test_analysis_run_create_execute_get_and_list(
     assert listed.status_code == 200
     assert_matches_schema(contract, "AnalysisRunPage", listed.json())
     assert listed.json()["total"] == 1
+    get_settings.cache_clear()
 
 
 def test_run_requires_confirmed_spec_and_queued_run_can_be_cancelled(

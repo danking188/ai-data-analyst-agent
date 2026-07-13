@@ -2,6 +2,11 @@ import type {
   AnalysisSpec,
   AnalysisSpecInput,
   AnalysisRun,
+  AssistantConversation,
+  AssistantFeedback,
+  AssistantMessage,
+  AssistantMetrics,
+  AssistantTurnAccepted,
   Artifact,
   Claim,
   CleaningOperation,
@@ -17,6 +22,7 @@ import type {
   QualityIssue,
   ReportExportInput,
   SchemaPatch,
+  SystemCapabilities,
 } from "./contracts";
 import {
   seedAnalysisSpec,
@@ -48,6 +54,169 @@ const analysisSpecs = [structuredClone(seedAnalysisSpec)];
 const runs = structuredClone(seedRuns);
 const artifacts = structuredClone(seedArtifacts);
 const claims = structuredClone(seedClaims);
+const assistantNow = new Date().toISOString();
+const assistantConversations: AssistantConversation[] = [
+  {
+    conversation_id: "conv_demo_sales",
+    project_id: seedProject.project_id,
+    title: "客户流失与数据质量",
+    status: "active",
+    dataset_version_id: seedVersions[0]?.version_id ?? null,
+    created_by: "demo-analyst",
+    created_at: assistantNow,
+    updated_at: assistantNow,
+    archived_at: null,
+  },
+];
+const assistantMessages = new Map<string, AssistantMessage[]>([
+  [
+    "conv_demo_sales",
+    [
+      {
+        message_id: "msg_demo_user_1",
+        conversation_id: "conv_demo_sales",
+        role: "user",
+        status: "completed",
+        content: "总结当前分析里最值得关注的结论。",
+        plan: null,
+        answer: null,
+        tool_calls: [],
+        parent_message_id: null,
+        job_id: null,
+        created_at: assistantNow,
+        completed_at: assistantNow,
+      },
+      {
+        message_id: "msg_demo_assistant_1",
+        conversation_id: "conv_demo_sales",
+        role: "assistant",
+        status: "completed",
+        content: "现有证据显示客户流失与合同类型、服务时长有关，建议先处理数据质量问题，再确认建模规格。",
+        plan: null,
+        answer: {
+          summary: "现有证据显示客户流失与合同类型、服务时长有关，建议先处理数据质量问题，再确认建模规格。",
+          findings: seedClaims.slice(0, 2).map((claim) => ({
+            text: claim.text,
+            claim_level: claim.level,
+            citation_ids: [claim.claim_id],
+            limitations: claim.limitations,
+          })),
+          next_actions: [
+            { label: "草拟分类分析规格", action_type: "draft_spec", requires_confirmation: true },
+          ],
+          limitations: ["当前结论来自关联分析，不代表因果关系。"],
+        },
+        tool_calls: [
+          {
+            tool_call_id: "tool_demo_claims",
+            tool_name: "claim.search",
+            tool_version: "1.0.0",
+            status: "succeeded",
+            requires_confirmation: false,
+            arguments: {},
+            result: { claim_count: 2 },
+            result_resource_type: null,
+            result_resource_id: null,
+          },
+        ],
+        parent_message_id: "msg_demo_user_1",
+        job_id: "job_demo_assistant_1",
+        created_at: assistantNow,
+        completed_at: assistantNow,
+      },
+      {
+        message_id: "msg_demo_user_2",
+        conversation_id: "conv_demo_sales",
+        role: "user",
+        status: "completed",
+        content: "为流失预测准备一个新的分类分析。",
+        plan: null,
+        answer: null,
+        tool_calls: [],
+        parent_message_id: null,
+        job_id: null,
+        created_at: assistantNow,
+        completed_at: assistantNow,
+      },
+      {
+        message_id: "msg_demo_assistant_plan",
+        conversation_id: "conv_demo_sales",
+        role: "assistant",
+        status: "awaiting_confirmation",
+        content: "已生成执行计划，确认前不会运行任何分析或数据变更。",
+        plan: {
+          objective: "建立可复现的客户流失分类分析",
+          dataset_version_id: seedVersions[0]?.version_id ?? null,
+          steps: [
+            {
+              position: 1,
+              title: "草拟分析规格",
+              tool_name: "analysis.draft_spec",
+              purpose: "确认目标列、特征边界、数据切分和评价指标",
+              requires_confirmation: true,
+            },
+            {
+              position: 2,
+              title: "运行分类基线",
+              tool_name: "analysis.run",
+              purpose: "训练并比较可复现的候选模型",
+              requires_confirmation: true,
+            },
+          ],
+          estimated_model_calls: 2,
+          estimated_tool_calls: 2,
+          limitations: ["执行前需要确认目标列和时间边界。"],
+        },
+        answer: null,
+        tool_calls: [
+          {
+            tool_call_id: "tool_demo_spec",
+            tool_name: "analysis.draft_spec",
+            tool_version: "1.0.0",
+            status: "proposed",
+            requires_confirmation: true,
+            arguments: {
+              name: "客户流失分类分析",
+              task: "binary_classification",
+              target: "churned",
+              entity_key: "customer_id",
+              time_column: null,
+              prediction_time_description: "使用观察期结束前已知字段预测下一周期流失",
+              split_strategy: "stratified",
+              group_column: null,
+              metrics: ["f1", "roc_auc", "pr_auc"],
+              included_columns: ["tenure_months", "contract_type", "failed_payments_90d"],
+              excluded_columns: ["customer_id", "cancel_date"],
+              random_seed: 42,
+              rationale: "目标是二元类别，使用分层拆分并排除事后字段。",
+              leakage_warnings: ["cancel_date 发生在预测时点之后，必须排除。"],
+              validation_warnings: [],
+            },
+            result: null,
+            result_resource_type: null,
+            result_resource_id: null,
+          },
+          {
+            tool_call_id: "tool_demo_run",
+            tool_name: "analysis.run",
+            tool_version: "1.0.0",
+            status: "proposed",
+            requires_confirmation: true,
+            arguments: { run_kind: "full" },
+            result: null,
+            result_resource_type: null,
+            result_resource_id: null,
+          },
+        ],
+        parent_message_id: "msg_demo_user_2",
+        job_id: "job_demo_assistant_plan",
+        created_at: assistantNow,
+        completed_at: null,
+      },
+    ],
+  ],
+]);
+const assistantFeedback: AssistantFeedback[] = [];
 
 function page<T>(items: T[]): Page<T> {
   return { items, page: 1, page_size: 20, total: items.length, has_more: false };
@@ -75,6 +244,26 @@ function createJob(kind: Job["kind"], currentStep: string, resourceType: string 
 }
 
 export const mockApi = {
+  async getCapabilities(): Promise<SystemCapabilities> {
+    await wait(20);
+    return {
+      api_version: "v1",
+      supported_file_types: ["csv", "xls", "xlsx", "parquet"],
+      max_upload_bytes: 524_288_000,
+      natural_language_analysis: true,
+      llm: {
+        evidence_narrative: true,
+        assistant: true,
+      },
+      auth_enabled: true,
+      polling: {
+        initial_interval_ms: 1000,
+        steady_interval_ms: 3000,
+        background_interval_ms: 10000,
+      },
+    };
+  },
+
   async login(username: string) {
     await wait();
     return { subject_id: username, expires_in_seconds: 43_200 };
@@ -467,6 +656,248 @@ export const mockApi = {
 
   async createReportExport(input: ReportExportInput): Promise<Job> {
     await wait();
+    if (input.format === "ai_narrative") {
+      const artifactId = `art_ai_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+      artifacts.push({
+        artifact_id: artifactId,
+        project_id: seedProject.project_id,
+        run_id: input.run_id,
+        dataset_version_id: runs.find((run) => run.run_id === input.run_id)?.dataset_version_id ?? "dsv_03JABC",
+        type: "log",
+        name: "AI 证据解读",
+        producer: "llm_report_narrative",
+        producer_version: "1.0.0",
+        status: "ready",
+        parameters: {
+          provider: "fake",
+          model: "mock-analysis",
+          prompt_name: "assistant.report_narrative",
+          prompt_version: "1.0.0",
+        },
+        result: {
+          summary: "当前分析已经形成可追溯的统计与模型证据。",
+          findings: seedClaims.slice(0, 2).map((claim) => ({
+            text: claim.text,
+            claim_level: claim.level,
+            citation_ids: [claim.claim_id],
+            limitations: claim.limitations,
+          })),
+          next_actions: [],
+          limitations: [...new Set(seedClaims.flatMap((claim) => claim.limitations))],
+        },
+        preview: null,
+        checksum: `sha256:${"a".repeat(64)}`,
+        downloadable: false,
+        created_at: new Date().toISOString(),
+      });
+      return createJob("report_export", "生成 AI 证据解读", "artifact", artifactId);
+    }
     return createJob("report_export", `生成 ${input.format.toUpperCase()} 导出`, "report_export", `exp_${crypto.randomUUID().slice(0, 8)}`);
+  },
+
+  async listAssistantConversations(projectId: string): Promise<Page<AssistantConversation>> {
+    await wait();
+    return page(structuredClone(assistantConversations.filter((item) => item.project_id === projectId)));
+  },
+
+  async getAssistantMetrics(projectId: string): Promise<AssistantMetrics> {
+    await wait();
+    const conversationIds = assistantConversations
+      .filter((item) => item.project_id === projectId)
+      .map((item) => item.conversation_id);
+    const messages = conversationIds.flatMap((id) => assistantMessages.get(id) ?? []);
+    const assistant = messages.filter((item) => item.role === "assistant");
+    const calls = assistant.flatMap((item) => item.tool_calls);
+    return {
+      window_days: 7,
+      turn_count: assistant.length,
+      succeeded_count: assistant.filter((item) => item.status === "completed").length,
+      failed_count: assistant.filter((item) => item.status === "failed").length,
+      input_tokens: assistant.length * 820,
+      output_tokens: assistant.length * 260,
+      average_latency_ms: assistant.length ? 1840 : 0,
+      p95_latency_ms: assistant.length ? 2600 : 0,
+      tool_call_count: calls.length,
+      tool_succeeded_count: calls.filter((item) => item.status === "succeeded").length,
+      tool_failed_count: calls.filter((item) => item.status === "failed").length,
+      tool_rejected_count: calls.filter((item) => item.status === "rejected").length,
+    };
+  },
+
+  async createAssistantConversation(
+    projectId: string,
+    input: { title?: string | null; dataset_version_id?: string | null },
+  ): Promise<AssistantConversation> {
+    await wait();
+    const timestamp = new Date().toISOString();
+    const conversation: AssistantConversation = {
+      conversation_id: `conv_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`,
+      project_id: projectId,
+      title: input.title || "新分析会话",
+      status: "active",
+      dataset_version_id: input.dataset_version_id ?? null,
+      created_by: "demo-analyst",
+      created_at: timestamp,
+      updated_at: timestamp,
+      archived_at: null,
+    };
+    assistantConversations.unshift(conversation);
+    assistantMessages.set(conversation.conversation_id, []);
+    return structuredClone(conversation);
+  },
+
+  async updateAssistantConversation(
+    conversationId: string,
+    input: { title?: string; status?: "active" | "archived"; dataset_version_id?: string | null },
+  ): Promise<AssistantConversation> {
+    await wait();
+    const conversation = assistantConversations.find((item) => item.conversation_id === conversationId);
+    if (!conversation) throw new Error("分析会话不存在");
+    if (input.title !== undefined) conversation.title = input.title;
+    if (input.status !== undefined) {
+      conversation.status = input.status;
+      conversation.archived_at = input.status === "archived" ? new Date().toISOString() : null;
+    }
+    if ("dataset_version_id" in input) conversation.dataset_version_id = input.dataset_version_id ?? null;
+    conversation.updated_at = new Date().toISOString();
+    return structuredClone(conversation);
+  },
+
+  async listAssistantMessages(conversationId: string): Promise<Page<AssistantMessage>> {
+    await wait(80);
+    return page(structuredClone(assistantMessages.get(conversationId) ?? []));
+  },
+
+  async createAssistantMessage(
+    _projectId: string,
+    conversationId: string,
+    content: string,
+  ): Promise<AssistantTurnAccepted> {
+    await wait();
+    const timestamp = new Date().toISOString();
+    const userMessage: AssistantMessage = {
+      message_id: `msg_${crypto.randomUUID().slice(0, 8)}`,
+      conversation_id: conversationId,
+      role: "user",
+      status: "completed",
+      content,
+      plan: null,
+      answer: null,
+      tool_calls: [],
+      parent_message_id: null,
+      job_id: null,
+      created_at: timestamp,
+      completed_at: timestamp,
+    };
+    const job = createJob("assistant_turn", "读取项目证据");
+    job.status = "succeeded";
+    job.progress = 100;
+    const assistantMessage: AssistantMessage = {
+      message_id: `msg_${crypto.randomUUID().slice(0, 8)}`,
+      conversation_id: conversationId,
+      role: "assistant",
+      status: "completed",
+      content: "我已读取当前项目上下文。这个问题需要结合现有证据继续判断。",
+      plan: null,
+      answer: {
+        summary: "我已读取当前项目上下文。这个问题需要结合现有证据继续判断。",
+        findings: [],
+        next_actions: [],
+        limitations: ["Mock 模式未执行新的数据计算。"],
+      },
+      tool_calls: [
+        {
+          tool_call_id: `tool_${crypto.randomUUID().slice(0, 8)}`,
+          tool_name: "project.get_context",
+          tool_version: "1.0.0",
+          status: "succeeded",
+          requires_confirmation: false,
+          arguments: {},
+          result: { project_id: seedProject.project_id },
+          result_resource_type: null,
+          result_resource_id: null,
+        },
+      ],
+      parent_message_id: userMessage.message_id,
+      job_id: job.job_id,
+      created_at: timestamp,
+      completed_at: timestamp,
+    };
+    assistantMessages.get(conversationId)?.push(userMessage, assistantMessage);
+    return { user_message: structuredClone(userMessage), assistant_message: structuredClone(assistantMessage), job };
+  },
+
+  async confirmAssistantPlan(
+    messageId: string,
+    decision: "approve" | "reject",
+    toolCallIds: string[],
+  ): Promise<AssistantTurnAccepted> {
+    await wait();
+    const message = [...assistantMessages.values()].flat().find((item) => item.message_id === messageId);
+    if (!message) throw new Error("Assistant 消息不存在");
+    const selected = toolCallIds.length ? new Set(toolCallIds) : null;
+    message.tool_calls = message.tool_calls.map((call) =>
+      !selected || selected.has(call.tool_call_id)
+        ? { ...call, status: decision === "approve" ? "approved" : "rejected" }
+        : call,
+    );
+    if (decision === "reject") {
+      message.status = "completed";
+      message.content = "计划已取消，未执行任何变更。";
+      message.answer = { summary: message.content, findings: [], next_actions: [], limitations: [] };
+      return { user_message: null, assistant_message: structuredClone(message), job: null };
+    }
+    message.status = "completed";
+    message.content = "计划已确认，后续操作将由受控任务继续执行。";
+    const continuation = await this.createAssistantMessage("", message.conversation_id, "执行已确认计划");
+    return { ...continuation, user_message: null };
+  },
+
+  async updateAssistantToolCall(
+    toolCallId: string,
+    argumentsValue: Record<string, unknown>,
+  ) {
+    await wait();
+    const call = [...assistantMessages.values()]
+      .flat()
+      .flatMap((message) => message.tool_calls)
+      .find((item) => item.tool_call_id === toolCallId);
+    if (!call || call.status !== "proposed") {
+      throw new Error("只有待确认的工具调用可以编辑");
+    }
+    call.arguments = structuredClone(argumentsValue);
+    return structuredClone(call);
+  },
+
+  async cancelAssistantMessage(messageId: string): Promise<AssistantMessage> {
+    await wait();
+    const message = [...assistantMessages.values()].flat().find((item) => item.message_id === messageId);
+    if (!message) throw new Error("Assistant 消息不存在");
+    message.status = "cancelled";
+    return structuredClone(message);
+  },
+
+  async retryAssistantMessage(messageId: string): Promise<AssistantTurnAccepted> {
+    await wait();
+    const source = [...assistantMessages.values()].flat().find((item) => item.message_id === messageId);
+    if (!source) throw new Error("Assistant 消息不存在");
+    return this.createAssistantMessage("", source.conversation_id, "重试上一轮问题");
+  },
+
+  async createAssistantFeedback(
+    messageId: string,
+    rating: "helpful" | "not_helpful",
+  ): Promise<AssistantFeedback> {
+    await wait();
+    const feedback: AssistantFeedback = {
+      feedback_id: `fb_${crypto.randomUUID().slice(0, 8)}`,
+      message_id: messageId,
+      rating,
+      reason: null,
+      comment: null,
+      created_at: new Date().toISOString(),
+    };
+    assistantFeedback.push(feedback);
+    return structuredClone(feedback);
   },
 };

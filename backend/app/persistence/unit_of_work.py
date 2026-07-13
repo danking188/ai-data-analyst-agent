@@ -8,6 +8,7 @@ from app.persistence.repositories import (
     AnalysisRunRepository,
     AnalysisSpecRepository,
     ArtifactRepository,
+    AssistantRepository,
     AuditRepository,
     ClaimRepository,
     CleaningPlanRepository,
@@ -27,6 +28,7 @@ class UnitOfWork:
         self.projects = ProjectRepository(session)
         self.users = UserRepository(session)
         self.analysis_specs = AnalysisSpecRepository(session)
+        self.assistant = AssistantRepository(session)
         self.runs = AnalysisRunRepository(session)
         self.datasets = DatasetRepository(session)
         self.jobs = JobRepository(session)

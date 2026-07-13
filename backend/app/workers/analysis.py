@@ -175,9 +175,7 @@ class AnalysisRunWorker:
                             file_name=str(file_payload["file_name"]),
                             content=content,
                         )
-                        checksum = self.storage.checksum_path(
-                            self.storage.resolve_key(storage_key)
-                        )
+                        checksum = self.storage.checksum_path(self.storage.resolve_key(storage_key))
                         file_result = dict(file_payload.get("result", {}))
                         file_result.update(
                             {
@@ -329,10 +327,7 @@ class AnalysisRunWorker:
                     project_id=project_id,
                     run_id=run_id,
                     dataset_version_id=evaluation.dataset_version_id,
-                    text=(
-                        f"模型 {model_name} 在独立保留集上的 "
-                        f"{primary_metric}={primary_value}。"
-                    ),
+                    text=(f"模型 {model_name} 在独立保留集上的 {primary_metric}={primary_value}。"),
                     level=3,
                     evidence_ids=evidence_ids,
                     limitations=[

@@ -49,6 +49,10 @@ def test_capabilities_requires_bearer(
         "supported_file_types": ["csv", "xls", "xlsx", "parquet"],
         "max_upload_bytes": 524288000,
         "natural_language_analysis": False,
+        "llm": {
+            "evidence_narrative": False,
+            "assistant": False,
+        },
         "auth_enabled": True,
         "polling": {
             "initial_interval_ms": 1000,
@@ -56,6 +60,28 @@ def test_capabilities_requires_bearer(
             "background_interval_ms": 10000,
         },
     }
+
+
+def test_capabilities_exposes_enabled_evidence_narrative(
+    app_client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    get_settings.cache_clear()
+    try:
+        response = app_client.get("/api/v1/system/capabilities", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["natural_language_analysis"] is True
+        assert response.json()["llm"] == {
+            "evidence_narrative": True,
+            "assistant": True,
+        }
+    finally:
+        get_settings.cache_clear()
 
 
 def test_unknown_route_uses_standard_error(app_client: TestClient) -> None:

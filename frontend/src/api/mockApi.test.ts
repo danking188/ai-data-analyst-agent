@@ -43,4 +43,16 @@ describe("mockApi contract behavior", () => {
     expect(claims.items[0]?.evidence_ids.length).toBeGreaterThan(0);
     expect(claims.items.every((claim) => claim.limitations.length > 0)).toBe(true);
   });
+
+  it("keeps assistant conversations project-scoped and records feedback", async () => {
+    const empty = await mockApi.listAssistantConversations("prj_unknown");
+    expect(empty.items).toEqual([]);
+    const conversations = await mockApi.listAssistantConversations("prj_01JABC");
+    const conversation = conversations.items[0]!;
+    const messages = await mockApi.listAssistantMessages(conversation.conversation_id);
+    const completed = messages.items.find((message) => message.role === "assistant" && message.status === "completed")!;
+    const feedback = await mockApi.createAssistantFeedback(completed.message_id, "helpful");
+    expect(feedback.message_id).toBe(completed.message_id);
+    expect(feedback.rating).toBe("helpful");
+  });
 });

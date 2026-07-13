@@ -130,6 +130,54 @@ The real modeling runtime additionally installs scikit-learn, SciPy and joblib. 
 produces a protected downloadable model Artifact, so the S3 credentials must permit object
 creation and retrieval under `S3_PREFIX`.
 
+### Optional LLM provider
+
+The LLM integration is disabled by default and does not affect deterministic analysis. Gates L1-L4
+provide evidence-grounded narratives, project-bound conversations, confirmed analysis/cleaning
+actions, bounded orchestration, quotas, circuit breaking, retention, and project metrics. Enable it
+only after the offline release gate and a canary smoke test.
+
+The first provider adapter uses an OpenAI-compatible Chat Completions endpoint:
+
+```text
+LLM_ENABLED=false
+LLM_PROVIDER=openai_compatible
+LLM_API_BASE=https://provider.example/v1
+LLM_API_KEY=secret-managed-provider-key
+LLM_MODEL=provider-model-name
+LLM_STRUCTURED_OUTPUT_MODE=json_schema
+LLM_TEMPERATURE=0.1
+LLM_TIMEOUT_SECONDS=120
+LLM_MAX_OUTPUT_TOKENS=4096
+LLM_MAX_INPUT_TOKENS=24000
+LLM_MAX_CALLS_PER_TURN=4
+LLM_MAX_TOOL_CALLS_PER_TURN=8
+LLM_MAX_RETRIES=2
+LLM_DAILY_TOKEN_BUDGET_PER_USER=200000
+LLM_MAX_CONCURRENT_TURNS_PER_PROJECT=2
+LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS=60
+LLM_ALLOW_MASKED_SAMPLES=false
+LLM_RETENTION_DAYS=30
+LLM_ARCHIVE_INACTIVE_DAYS=90
+LLM_CANARY_SUBJECTS=internal-subject-id
+```
+
+Store `LLM_API_KEY` as a platform secret. Do not put it in `.env.deploy`, Git, database rows,
+job payloads, screenshots, or deployment logs. `LLM_API_BASE` must use HTTPS in production.
+ModelScope deployments require the inference endpoint URL, API key, and exact model name; a
+Studio access token alone does not identify an inference model.
+
+`/api/v1/system/capabilities` exposes `llm.evidence_narrative` and `llm.assistant` separately.
+Clients must keep conversation entry points hidden while `llm.assistant=false`. Provider
+authentication, rate-limit, timeout, network, malformed JSON, and schema mismatch failures are
+normalized to safe internal error codes without response bodies or credentials.
+
+`LLM_CANARY_SUBJECTS` is a comma-separated allowlist of authenticated subject IDs. Keep it set
+during the observation window; an empty value enables Assistant for every signed-in account.
+Immediate rollback is `LLM_ENABLED=false`, followed by a Studio redeploy. See
+[`LLM_CANARY_RUNBOOK.md`](./LLM_CANARY_RUNBOOK.md) for the release and rollback sequence.
+
 Build and test the single-container image locally:
 
 ```bash

@@ -14,6 +14,8 @@
 8. 前端会话启动提示：`development/FRONTEND_SESSION_PROMPT.md`
 9. 后端会话启动提示：`development/BACKEND_SESSION_PROMPT.md`
 10. 界面设计参考：`design/`
+11. 大模型能力扩展计划：`development/LLM_EXTENSION_PLAN.md`
+12. 大模型接入架构决策：`development/LLM_ARCHITECTURE_DECISION.md`
 
 发生冲突时，优先级为：
 

@@ -57,6 +57,23 @@ export interface Page<T> {
   has_more: boolean;
 }
 
+export interface SystemCapabilities {
+  api_version: string;
+  supported_file_types: Array<"csv" | "xls" | "xlsx" | "parquet">;
+  max_upload_bytes: number;
+  natural_language_analysis: boolean;
+  llm: {
+    evidence_narrative: boolean;
+    assistant: boolean;
+  };
+  auth_enabled: boolean;
+  polling: {
+    initial_interval_ms: number;
+    steady_interval_ms: number;
+    background_interval_ms: number;
+  };
+}
+
 export interface Project {
   project_id: string;
   name: string;
@@ -250,7 +267,8 @@ export interface Job {
     | "cleaning_preview"
     | "cleaning_execute"
     | "analysis_run"
-    | "report_export";
+    | "report_export"
+    | "assistant_turn";
   status: JobStatus;
   progress: number;
   current_step: string | null;
@@ -338,9 +356,113 @@ export interface SessionInfo {
 
 export interface ReportExportInput {
   run_id: string;
-  format: "html" | "notebook" | "cleaned_data" | "manifest";
+  format: "html" | "notebook" | "cleaned_data" | "manifest" | "ai_narrative";
   claim_ids: string[];
   include_code: boolean;
   include_evidence: boolean;
   data_format: "csv" | "parquet" | null;
+}
+
+export interface AssistantConversation {
+  conversation_id: string;
+  project_id: string;
+  title: string;
+  status: "active" | "archived";
+  dataset_version_id: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface AssistantPlanStep {
+  position: number;
+  title: string;
+  tool_name: string | null;
+  purpose: string;
+  requires_confirmation: boolean;
+}
+
+export interface AssistantPlan {
+  objective: string;
+  dataset_version_id: string | null;
+  steps: AssistantPlanStep[];
+  estimated_model_calls: number;
+  estimated_tool_calls: number;
+  limitations: string[];
+}
+
+export interface AssistantFinding {
+  text: string;
+  claim_level: number;
+  citation_ids: string[];
+  limitations: string[];
+}
+
+export interface AssistantAnswer {
+  summary: string;
+  findings: AssistantFinding[];
+  next_actions: Array<{
+    label: string;
+    action_type: "ask" | "draft_spec" | "run_analysis" | "draft_cleaning" | "export_report";
+    requires_confirmation: boolean;
+  }>;
+  limitations: string[];
+}
+
+export interface AssistantToolCall {
+  tool_call_id: string;
+  tool_name: string;
+  tool_version: string;
+  status: "proposed" | "approved" | "running" | "succeeded" | "failed" | "rejected";
+  requires_confirmation: boolean;
+  arguments: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  result_resource_type: string | null;
+  result_resource_id: string | null;
+}
+
+export interface AssistantMessage {
+  message_id: string;
+  conversation_id: string;
+  role: "user" | "assistant" | "system_event" | "tool";
+  status: "queued" | "processing" | "awaiting_confirmation" | "completed" | "failed" | "cancelled";
+  content: string | null;
+  plan: AssistantPlan | null;
+  answer: AssistantAnswer | null;
+  tool_calls: AssistantToolCall[];
+  parent_message_id: string | null;
+  job_id: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AssistantTurnAccepted {
+  user_message: AssistantMessage | null;
+  assistant_message: AssistantMessage;
+  job: Job | null;
+}
+
+export interface AssistantFeedback {
+  feedback_id: string;
+  message_id: string;
+  rating: "helpful" | "not_helpful";
+  reason: string | null;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface AssistantMetrics {
+  window_days: number;
+  turn_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  average_latency_ms: number;
+  p95_latency_ms: number;
+  tool_call_count: number;
+  tool_succeeded_count: number;
+  tool_failed_count: number;
+  tool_rejected_count: number;
 }

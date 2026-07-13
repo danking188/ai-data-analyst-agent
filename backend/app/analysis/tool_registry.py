@@ -19,8 +19,7 @@ def _benjamini_hochberg(rows: list[dict[str, Any]]) -> None:
     eligible = [
         (index, float(row["p_value"]))
         for index, row in enumerate(rows)
-        if isinstance(row.get("p_value"), (int, float))
-        and math.isfinite(float(row["p_value"]))
+        if isinstance(row.get("p_value"), (int, float)) and math.isfinite(float(row["p_value"]))
     ]
     total = len(eligible)
     adjusted = 1.0
@@ -355,9 +354,10 @@ def profile_eda(context: dict[str, Any]) -> dict[str, Any]:
     health_warnings = []
     if duplicate_rows:
         health_warnings.append(f"检测到 {duplicate_rows} 条完全重复记录")
-    if target_diagnostics.get("imbalance_ratio") and float(
-        target_diagnostics["imbalance_ratio"]
-    ) >= 3:
+    if (
+        target_diagnostics.get("imbalance_ratio")
+        and float(target_diagnostics["imbalance_ratio"]) >= 3
+    ):
         health_warnings.append("目标类别不平衡，模型评估应优先关注 PR-AUC、召回率与 F1")
     if target_diagnostics.get("missing_count"):
         health_warnings.append("目标字段包含缺失值，建模时将排除这些记录")

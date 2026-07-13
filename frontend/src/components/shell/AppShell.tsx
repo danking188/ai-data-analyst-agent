@@ -31,6 +31,7 @@ const navigation = [
   { to: "/quality", label: "质量", icon: ShieldCheck },
   { to: "/explore", label: "探索", icon: Search },
   { to: "/model", label: "模型", icon: Bot },
+  { to: "/assistant", label: "助手", icon: Bot },
   { to: "/report", label: "报告", icon: FileBarChart },
 ];
 

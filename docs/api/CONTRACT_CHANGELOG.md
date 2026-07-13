@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+- 新增 `GET /projects/{project_id}/assistant/metrics`，返回近 1~90 天的 Turn 成功/
+  失败数、Token、平均与 P95 延迟，以及工具成功、失败和拒绝数。
+
+### Added
+
+- 新增 `PATCH /projects/{project_id}/assistant/tool-calls/{tool_call_id}`，用于在批准前编辑并重新校验受控工具参数。
+- `AssistantToolCall` 增加结构化 `arguments`、确定性 `result` 和结果资源链接。
+- Assistant 确认计划可通过现有 Worker 创建真实 AnalysisSpec、AnalysisRun、CleaningPlan、DatasetVersion 和特征建议 Artifact。
+- 新增 Assistant v0 契约：项目会话、消息、计划确认、重试、取消和回答反馈。
+- 新增结构化 `AssistantPlan`、`AssistantAnswer`、证据引用和工具调用状态。
+- `Job.kind` 增加 `assistant_turn`，用于后续异步大模型编排。
+- `SystemCapabilities.llm` 分别声明 `evidence_narrative` 和 `assistant`；P1 只开启证据解读，Assistant 在 P2 完成前保持关闭。
+- 报告导出格式增加 `ai_narrative`，异步生成绑定 Artifact/Claim 的结构化证据解读 Artifact。
+- 兼容性：Minor。现有接口和字段保持兼容。
+
 ### Changed
 
 - `Artifact.run_id` 允许为 `null`，用于清洗预览、版本比较等不隶属于 AnalysisRun 的产物。
@@ -12,10 +27,13 @@
 ### Frontend impact
 
 - Artifact 查看器需要把 `run_id` 视为可空字段。
+- 重新生成 API 类型；Assistant 页面只在能力开关为 `true` 时启用。
 
 ### Backend impact
 
 - 后端 Artifact schema 与现有持久化模型保持一致。
+- LLM-0 Provider 基础和 LLM-1 证据型解读已实现；Assistant 路由、持久化和 `assistant_turn` Worker 在 LLM-2 实现。
+- `LLM_ENABLED=true` 当前只开放报告页证据解读，不表示对话式 Assistant 已可用。
 
 ## 1.0.0 — 2026-07-09
 

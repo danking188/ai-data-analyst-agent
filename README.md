@@ -130,6 +130,13 @@ HistGradientBoostingRegressor。数值和类别预处理统一封装在 sklearn 
 joblib 模型包。核心计算完全不依赖大语言模型；未来接入 LLM 时只允许根据现有
 Artifact 组织叙述，不能生成或改写指标。
 
+大模型扩展的 Gate L0 和 Gate L1 已经完成：后端提供可替换的 `LLMProvider`、无网络
+`FakeLLMProvider`、OpenAI-compatible 适配器、严格结构化输出、Prompt 版本注册表和
+安全故障映射。报告页可异步生成只读取已验证 Claim/Artifact 的 AI 证据解读，所有数字和
+引用均经过确定性校验，并可进入 HTML、Notebook 和 Manifest。该能力默认关闭；配置模型后
+设置 `LLM_ENABLED=true` 只开放报告解读，对话式 Assistant 仍等待 Gate L2。实施进度见
+[大模型能力扩展计划](docs/development/LLM_EXTENSION_PLAN.md)。
+
 ## 目录维护规则
 
 - 业务代码只放在 `frontend/` 或 `backend/`。

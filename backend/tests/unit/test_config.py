@@ -57,3 +57,63 @@ def test_external_persistence_accepts_postgres_and_s3(
         assert settings.storage_backend == "s3"
     finally:
         get_settings.cache_clear()
+
+
+def test_llm_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_ENABLED", raising=False)
+    monkeypatch.delenv("LLM_API_BASE", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    get_settings.cache_clear()
+    try:
+        settings = get_settings()
+        assert settings.llm_enabled is False
+        assert settings.llm_provider == "openai_compatible"
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("missing", ["LLM_API_BASE", "LLM_API_KEY", "LLM_MODEL"])
+def test_enabled_llm_requires_provider_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    missing: str,
+) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_API_BASE", "https://provider.example/v1")
+    monkeypatch.setenv("LLM_API_KEY", "private-provider-key")
+    monkeypatch.setenv("LLM_MODEL", "analysis-model")
+    monkeypatch.delenv(missing, raising=False)
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match=missing):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_llm_api_key_is_hidden_from_settings_repr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_API_BASE", "https://provider.example/v1")
+    monkeypatch.setenv("LLM_API_KEY", "private-provider-key")
+    monkeypatch.setenv("LLM_MODEL", "analysis-model")
+    get_settings.cache_clear()
+    try:
+        settings = get_settings()
+        assert "private-provider-key" not in repr(settings)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_production_llm_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("AUTH_MODE", "dev_token")
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_API_BASE", "http://provider.example/v1")
+    monkeypatch.setenv("LLM_API_KEY", "private-provider-key")
+    monkeypatch.setenv("LLM_MODEL", "analysis-model")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="HTTPS"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
