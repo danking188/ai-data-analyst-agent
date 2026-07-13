@@ -32,6 +32,10 @@ LLM_ARCHIVE_INACTIVE_DAYS=90
 LLM_CANARY_SUBJECTS=<authenticated-subject-id>
 ```
 
+For ModelScope API-Inference with Qwen, the validated deployment uses
+`LLM_STRUCTURED_OUTPUT_MODE=prompt` and `LLM_ENABLE_THINKING=false`. Keep the generic defaults above for
+other providers unless their compatibility has been tested explicitly.
+
 The ModelScope Studio access token and the inference provider key are different credentials unless
 the selected inference endpoint explicitly accepts the Studio token.
 

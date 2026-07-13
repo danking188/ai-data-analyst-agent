@@ -484,16 +484,21 @@ mypy、前端 22 项测试、TypeScript 和生产构建通过；桌面端与 390
 | LLM-OPS-402 | [x] | LLM-OPS-401 | 数据保留和删除任务 | Retention worker | 到期调用明细可清理；会话归档策略可验证 |
 | LLM-QA-401 | [x] | LLM-BE-401~404 | Prompt 注入与越权红队测试 | 安全测试集 | 数据单元格指令、伪造 ID、工具升级和跨项目攻击全部失败 |
 | LLM-QA-402 | [x] | LLM-OPS-401 | 质量、成本和延迟发布门禁 | Eval report | 达到本计划第 1 节量化门槛才可开启生产功能开关 |
-| LLM-OPS-403 | [ ] | LLM-QA-402 | ModelScope 灰度发布 | 部署配置 + smoke | 小范围账号开启、可一键关闭、核心功能无回归 |
+| LLM-OPS-403 | [x] | LLM-QA-402 | ModelScope 灰度发布 | 部署配置 + smoke | 小范围账号开启、可一键关闭、核心功能无回归 |
 
-**Gate L4**：Agent 在白名单和预算内完成多步分析，故障可降级、行为可审计、成本可控制，完成
-ModelScope 真实数据灰度验收后再全量开启。
+**Gate L4（已完成）**：Agent 在白名单和预算内完成多步分析，故障可降级、行为可审计、成本可控制，
+并已完成 ModelScope 真实数据灰度验收。
 
-实施记录（2026-07-13）：状态机、上下文压缩、单次回答纠正、用户 Token 配额、
+实施记录（2026-07-13）：状态机、上下文压缩、单次回答纠正、确定性证据降级、用户 Token 配额、
 项目并发、持久化 Provider 熔断、结构化日志、项目指标 API/前端和 Retention Worker
-已完成。50 条固定评估集和红队测试通过；后端 139 项、前端 23 项及静态/构建/
-OpenAPI 门禁通过。1280px 与 390px 界面无溢出和运行错误。当前仅剩 ModelScope
-灰度部署与真实 Provider/CSV smoke，未通过前不标记 Gate L4 完成。
+已完成。50 条固定评估集和红队测试通过；后端 145 项、前端 23 项及静态/构建/
+OpenAPI 门禁通过。1280px 与 390px 界面无溢出和运行错误。
+
+生产验收记录（2026-07-13）：ModelScope 灰度账号使用外部 PostgreSQL、S3 和真实
+`Qwen/Qwen3.5-35B-A3B` 完成 CSV 上传、解析、质量扫描与 5 条标准 Assistant 问题；成功率
+100%，P95 13.336 秒，15 次工具调用全部成功，25 条发现引用覆盖率 100%。合法建模计划在拒绝后
+未创建 AnalysisSpec/Run；重新生成并确认后，真实二分类 Run 成功并产出 10 个 Artifact 和 sklearn
+Pipeline。完整记录见 `docs/quality/LLM_PRODUCTION_ACCEPTANCE.md`。
 
 ## 10. 推荐执行批次与工作量
 
