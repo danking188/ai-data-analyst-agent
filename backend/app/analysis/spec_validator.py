@@ -31,6 +31,23 @@ METRICS_BY_TASK: dict[str, set[str]] = {
 }
 
 
+def _is_discrete_classification_target(target: ColumnSchemaRow, task: str) -> bool:
+    if target.semantic_type in {"categorical", "boolean", "ordinal"}:
+        return True
+    if target.semantic_type != "numeric" or target.physical_type not in {"integer", "float"}:
+        return False
+    unique_count = target.profile_json.get("unique_count")
+    non_null_count = target.profile_json.get("non_null_count")
+    if not isinstance(unique_count, int) or not isinstance(non_null_count, int):
+        return False
+    if task == "binary_classification":
+        return unique_count == 2
+    if task == "multiclass_classification" and target.physical_type == "integer":
+        max_classes = min(50, max(3, int(non_null_count * 0.2)))
+        return 2 < unique_count <= max_classes
+    return False
+
+
 def validate_analysis_spec(
     spec: AnalysisSpecCreate,
     *,
@@ -98,8 +115,8 @@ def validate_analysis_spec(
         target = columns[spec.target]
         if spec.task == "regression" and target.semantic_type != "numeric":
             raise validation_error("回归任务 target 必须为数值字段", target=spec.target)
-        if spec.task in {"binary_classification", "multiclass_classification"} and (
-            target.semantic_type not in {"categorical", "boolean", "ordinal"}
+        if spec.task in {"binary_classification", "multiclass_classification"} and not (
+            _is_discrete_classification_target(target, spec.task)
         ):
             raise validation_error("分类任务 target 必须为离散字段", target=spec.target)
 
