@@ -162,6 +162,11 @@ def test_retention_archives_inactive_conversations_and_scrubs_call_payloads(
         "scrubbed_runs": 1,
         "scrubbed_tool_calls": 1,
     }
+    assert AssistantRetentionWorker(get_database(), settings=get_settings()).run() == {
+        "archived_conversations": 0,
+        "scrubbed_runs": 0,
+        "scrubbed_tool_calls": 0,
+    }
     verify = get_database().session()
     try:
         repository = AssistantRepository(verify)

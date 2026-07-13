@@ -441,14 +441,18 @@ class AssistantRepository:
             conversation.status = "archived"
             conversation.archived_at = now
 
-        runs = list(
+        old_runs = list(
             self.session.scalars(
                 select(LLMRunRow).where(
                     LLMRunRow.created_at < scrub_before,
-                    LLMRunRow.context_manifest_json != {},
                 )
             )
         )
+        runs = [
+            run
+            for run in old_runs
+            if not bool(run.context_manifest_json.get("retained"))
+        ]
         run_ids = [run.llm_run_id for run in runs]
         for run in runs:
             manifest = run.context_manifest_json
