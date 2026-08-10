@@ -40,21 +40,21 @@ jobs:
       - run: docker buildx build --load --sbom=true --provenance=mode=max -t datatrace-backend:audit backend
       - run: docker buildx build --load --sbom=true --provenance=mode=max -t datatrace-frontend:audit frontend
       - run: docker buildx build --load --sbom=true --provenance=mode=max -t datatrace-pilot:audit .
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: datatrace-backend:audit
           format: table
           exit-code: "1"
           ignore-unfixed: true
           severity: CRITICAL,HIGH
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: datatrace-frontend:audit
           format: table
           exit-code: "1"
           ignore-unfixed: true
           severity: CRITICAL,HIGH
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: datatrace-pilot:audit
           format: table
