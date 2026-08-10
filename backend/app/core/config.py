@@ -61,9 +61,11 @@ class Settings:
     login_password: str
     registration_enabled: bool
     session_cookie_name: str
+    csrf_cookie_name: str
     session_cookie_secure: bool
     session_ttl_seconds: int
     cors_origins: tuple[str, ...]
+    trusted_hosts: tuple[str, ...]
     llm_enabled: bool
     llm_provider: str
     llm_api_base: str | None
@@ -95,8 +97,9 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     _read_env_file(Path(".env"))
+    app_env = os.getenv("APP_ENV", "development")
     settings = Settings(
-        app_env=os.getenv("APP_ENV", "development"),
+        app_env=app_env,
         api_prefix=os.getenv("API_PREFIX", "/api/v1"),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./data/app.db"),
         database_pool_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
@@ -128,9 +131,10 @@ def get_settings() -> Settings:
         jwt_issuer=os.getenv("JWT_ISSUER", "ai-data-analyst"),
         login_username=os.getenv("LOGIN_USERNAME", "analyst"),
         login_password=os.getenv("LOGIN_PASSWORD", ""),
-        registration_enabled=os.getenv("REGISTRATION_ENABLED", "true").lower()
+        registration_enabled=os.getenv("REGISTRATION_ENABLED", "false").lower()
         in {"1", "true", "yes"},
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "datatrace_session"),
+        csrf_cookie_name=os.getenv("CSRF_COOKIE_NAME", "datatrace_csrf"),
         session_cookie_secure=os.getenv("SESSION_COOKIE_SECURE", "false").lower()
         in {"1", "true", "yes"},
         session_ttl_seconds=int(os.getenv("SESSION_TTL_SECONDS", "43200")),
@@ -138,6 +142,14 @@ def get_settings() -> Settings:
             origin.strip()
             for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
             if origin.strip()
+        ),
+        trusted_hosts=tuple(
+            host.strip()
+            for host in os.getenv(
+                "TRUSTED_HOSTS",
+                "" if app_env == "production" else "localhost,127.0.0.1,testserver",
+            ).split(",")
+            if host.strip()
         ),
         llm_enabled=os.getenv("LLM_ENABLED", "false").lower() in {"1", "true", "yes"},
         llm_provider=os.getenv("LLM_PROVIDER", "openai_compatible").lower(),
@@ -177,6 +189,8 @@ def get_settings() -> Settings:
         raise ValueError("AUTH_MODE must be dev_token or jwt")
     if settings.max_upload_bytes <= 0:
         raise ValueError("MAX_UPLOAD_BYTES must be positive")
+    if settings.app_env == "production" and settings.max_upload_bytes > 104_857_600:
+        raise ValueError("MAX_UPLOAD_BYTES must not exceed 100 MiB in production")
     if settings.database_pool_size <= 0:
         raise ValueError("DATABASE_POOL_SIZE must be positive")
     if settings.database_max_overflow < 0:
@@ -211,9 +225,21 @@ def get_settings() -> Settings:
             raise ValueError("STORAGE_BACKEND must be s3 when external persistence is required")
     if settings.session_ttl_seconds <= 0:
         raise ValueError("SESSION_TTL_SECONDS must be positive")
+    if not settings.session_cookie_name or not settings.csrf_cookie_name:
+        raise ValueError("session and CSRF cookie names must not be empty")
+    if settings.session_cookie_name == settings.csrf_cookie_name:
+        raise ValueError("session and CSRF cookie names must be different")
+    if not settings.trusted_hosts:
+        raise ValueError("TRUSTED_HOSTS must contain at least one host")
     if settings.auth_mode == "jwt" and not settings.login_password:
         raise ValueError("LOGIN_PASSWORD is required when AUTH_MODE=jwt")
+    if settings.app_env == "production" and settings.auth_mode != "jwt":
+        raise ValueError("AUTH_MODE=jwt is required in production")
     if settings.app_env == "production" and settings.auth_mode == "jwt":
+        if not settings.session_cookie_secure:
+            raise ValueError("SESSION_COOKIE_SECURE=true is required in production")
+        if "*" in settings.trusted_hosts:
+            raise ValueError("TRUSTED_HOSTS must not contain wildcard hosts in production")
         if len(settings.jwt_secret) < 32 or settings.jwt_secret.startswith("replace-with-"):
             raise ValueError(
                 "JWT_SECRET must be a non-placeholder secret of at least 32 characters"

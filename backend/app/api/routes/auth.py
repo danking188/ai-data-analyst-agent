@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.schemas import LoginRequest, RegisterRequest, SessionInfo
+from app.api.schemas import AuthConfig, LoginRequest, RegisterRequest, SessionInfo
 from app.core.config import Settings, get_settings
 from app.domain.errors import DomainError
 from app.persistence.session import get_session as get_database_session
@@ -17,6 +18,15 @@ from app.security.auth import (
 from app.services.accounts import AccountService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+@router.get("/config", response_model=AuthConfig, operation_id="getAuthConfig")
+def get_auth_config(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthConfig:
+    return AuthConfig(
+        registration_enabled=settings.auth_mode == "jwt" and settings.registration_enabled
+    )
 
 
 def _set_session_cookie(
@@ -31,6 +41,15 @@ def _set_session_cookie(
         value=token,
         max_age=max_age,
         httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=secrets.token_urlsafe(32),
+        max_age=max_age,
+        httponly=False,
         secure=settings.session_cookie_secure,
         samesite="lax",
         path="/",
@@ -88,6 +107,19 @@ def logout(
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
-    response.delete_cookie(settings.session_cookie_name, path="/")
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        settings.csrf_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=False,
+        samesite="lax",
+    )
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

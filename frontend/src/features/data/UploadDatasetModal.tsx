@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileSpreadsheet, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
@@ -11,12 +11,10 @@ import { fileSize } from "../../lib/format";
 import { queryKeys } from "../../lib/queryKeys";
 
 const acceptedExtensions = [".csv", ".xls", ".xlsx", ".parquet"];
-const maxBytes = 524_288_000;
-
-function validateFile(file: File) {
+function validateFile(file: File, maxBytes: number) {
   const extension = `.${file.name.split(".").pop()?.toLowerCase()}`;
   if (!acceptedExtensions.includes(extension)) return "仅支持 CSV、XLS、XLSX 和 Parquet";
-  if (file.size > maxBytes) return "文件超过 500 MiB 限制";
+  if (file.size > maxBytes) return `文件超过 ${fileSize(maxBytes)} 限制`;
   if (file.size === 0) return "文件为空，请重新选择";
   return null;
 }
@@ -30,6 +28,12 @@ export function UploadDatasetModal({ open, onClose }: { open: boolean; onClose: 
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const { project, dataset } = useAppContext();
+  const capabilitiesQuery = useQuery({
+    queryKey: ["system", "capabilities"],
+    queryFn: apiClient.getCapabilities,
+    enabled: open,
+  });
+  const maxBytes = capabilitiesQuery.data?.max_upload_bytes ?? 104_857_600;
 
   const reset = () => {
     setFile(null);
@@ -68,7 +72,7 @@ export function UploadDatasetModal({ open, onClose }: { open: boolean; onClose: 
       if (inputRef.current) inputRef.current.value = "";
       return;
     }
-    const error = validateFile(nextFile);
+    const error = validateFile(nextFile, maxBytes);
     setValidationError(error);
     if (error) {
       setFile(null);
@@ -153,7 +157,7 @@ export function UploadDatasetModal({ open, onClose }: { open: boolean; onClose: 
           >
             <UploadCloud aria-hidden="true" size={34} />
             <strong>将文件拖到此处，或点击选择文件</strong>
-            <span>支持 CSV、XLS、XLSX、Parquet，最大 500 MiB</span>
+            <span>支持 CSV、XLS、XLSX、Parquet，最大 {fileSize(maxBytes)}</span>
           </button>
           <label className="field">
             <span>数据集名称</span>

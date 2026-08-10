@@ -142,3 +142,30 @@ def test_s3_storage_stages_upload_for_a_separate_worker(tmp_path: Path) -> None:
     assert storage.resolve_key(staged.storage_key).read_bytes() == b"name,value\na,1\n"
     storage.remove_staged("job_1")
     assert client.objects == {}
+
+
+def test_local_ingestion_can_be_rolled_back_after_database_failure(tmp_path: Path) -> None:
+    storage = FileStorage(tmp_path)
+    staged = storage._safe_path("tmp", "job_1", "source.csv")
+    staged.parent.mkdir(parents=True)
+    staged.write_bytes(b"name,value\na,1\n")
+    parquet = storage.temp_parquet_path("job_1")
+    parquet.write_bytes(b"PAR1-test")
+
+    source_key, data_key = storage.commit_ingestion(
+        project_id="prj_1",
+        dataset_id="ds_1",
+        version_id="dsv_1",
+        source_path=staged,
+        parquet_path=parquet,
+        source_type="csv",
+    )
+    storage.rollback_ingestion(
+        staged_key="tmp/job_1/source.csv",
+        source_key=source_key,
+        data_key=data_key,
+    )
+
+    assert staged.read_bytes() == b"name,value\na,1\n"
+    assert not storage.resolve_key(source_key).exists()
+    assert not storage.resolve_key(data_key).exists()

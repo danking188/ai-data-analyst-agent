@@ -1,6 +1,6 @@
 # AI Data Analyst Agent 开发协作入口
 
-本目录是前后端并行开发的共享事实源。两个开发会话开始工作前都必须先阅读本页。
+本目录是项目开发、契约与发布状态的共享事实源。
 
 ## 唯一事实源
 
@@ -8,14 +8,14 @@
 2. API 机器可读契约：`api/openapi.yaml`
 3. API 全局约定：`api/API_INTEGRATION_STANDARD.md`
 4. 契约变更记录：`api/CONTRACT_CHANGELOG.md`
-5. 并行任务与联调门禁：`development/PARALLEL_DEVELOPMENT_PLAN.md`
+5. 当前项目状态与发布进程：`development/PROJECT_STATUS.md`
 6. 技术栈决策：`development/TECH_STACK_DECISION.md`
 7. 数据持久化与数据库设计：`data/DATA_PERSISTENCE_STANDARD.md`
-8. 前端会话启动提示：`development/FRONTEND_SESSION_PROMPT.md`
-9. 后端会话启动提示：`development/BACKEND_SESSION_PROMPT.md`
-10. 界面设计参考：`design/`
-11. 大模型能力扩展计划：`development/LLM_EXTENSION_PLAN.md`
-12. 大模型接入架构决策：`development/LLM_ARCHITECTURE_DECISION.md`
+8. 历史并行开发基线：`development/PARALLEL_DEVELOPMENT_PLAN.md`
+9. 界面设计参考：`design/`
+10. 大模型能力扩展计划：`development/LLM_EXTENSION_PLAN.md`
+11. 大模型接入架构决策：`development/LLM_ARCHITECTURE_DECISION.md`
+12. 正式发布证据模板：`deployment/RELEASE_EVIDENCE.md`
 
 发生冲突时，优先级为：
 
@@ -24,7 +24,8 @@
   > openapi.yaml
   > API_INTEGRATION_STANDARD.md
   > DATA_PERSISTENCE_STANDARD.md
-  > 并行任务计划
+  > 当前项目状态与发布进程
+  > 历史并行任务计划
   > 对话中的临时描述
 ```
 
@@ -49,7 +50,7 @@ docs/data/      # 数据库、文件存储、迁移与数据一致性规范
 docs/development/
 ```
 
-两个会话不要同时修改同一代码目录。共享文档发生冲突时，以契约变更流程处理。
+共享文档发生冲突时，以契约变更流程和当前项目状态台账处理。
 
 ## 契约校验
 

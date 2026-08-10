@@ -24,6 +24,7 @@ def test_jwt_login_cookie_session_and_logout(
     monkeypatch.setenv("LOGIN_PASSWORD", "test-password")
     monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-at-least-32-characters")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("REGISTRATION_ENABLED", "true")
 
     from app.core.config import get_settings
     from app.persistence.session import get_database
@@ -35,6 +36,10 @@ def test_jwt_login_cookie_session_and_logout(
     from app.main import create_app
 
     with TestClient(create_app()) as client:
+        auth_config = client.get("/api/v1/auth/config")
+        assert auth_config.status_code == 200
+        assert auth_config.json() == {"registration_enabled": True}
+
         rejected = client.post(
             "/api/v1/auth/login",
             json={"username": "analyst", "password": "wrong"},
@@ -48,12 +53,14 @@ def test_jwt_login_cookie_session_and_logout(
         assert logged_in.status_code == 200
         assert logged_in.json()["subject_id"] == "analyst"
         assert "datatrace_session=" in logged_in.headers["set-cookie"]
+        csrf_token = client.cookies.get("datatrace_csrf")
+        assert csrf_token
 
         session = client.get("/api/v1/auth/session")
         assert session.status_code == 200
         assert session.json()["subject_id"] == "analyst"
 
-        created = client.post(
+        csrf_rejected = client.post(
             "/api/v1/projects",
             headers={"Idempotency-Key": "cookie-auth-project"},
             json={
@@ -62,9 +69,27 @@ def test_jwt_login_cookie_session_and_logout(
                 "language": "zh-CN",
             },
         )
+        assert csrf_rejected.status_code == 403
+        assert csrf_rejected.json()["error"]["code"] == "CSRF_VALIDATION_FAILED"
+
+        created = client.post(
+            "/api/v1/projects",
+            headers={
+                "Idempotency-Key": "cookie-auth-project",
+                "X-CSRF-Token": csrf_token,
+            },
+            json={
+                "name": "Cookie 项目",
+                "timezone": "Asia/Shanghai",
+                "language": "zh-CN",
+            },
+        )
         assert created.status_code == 201
 
-        logged_out = client.post("/api/v1/auth/logout")
+        logged_out = client.post(
+            "/api/v1/auth/logout",
+            headers={"X-CSRF-Token": csrf_token},
+        )
         assert logged_out.status_code == 204
         assert client.get("/api/v1/auth/session").status_code == 401
 

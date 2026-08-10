@@ -2681,6 +2681,7 @@ tbody tr:hover {
 
 .field input,
 .field textarea,
+.field select,
 .schema-table select,
 .search-field input {
   width: 100%;
@@ -2693,6 +2694,11 @@ tbody tr:hover {
 }
 
 .field input {
+  height: 40px;
+  padding: 0 11px;
+}
+
+.field select {
   height: 40px;
   padding: 0 11px;
 }
@@ -2710,6 +2716,44 @@ tbody tr:hover {
 .form-error {
   color: var(--red);
   font-size: 12px;
+}
+
+.project-picker {
+  max-height: 220px;
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.project-picker .context-card strong {
+  max-width: none;
+}
+
+.project-picker .context-card span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-result {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.comparison-result pre {
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  color: #dbe8ff;
+  border-radius: 8px;
+  background: #172238;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .toast-region {

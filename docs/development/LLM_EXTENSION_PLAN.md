@@ -5,7 +5,9 @@
 适用范围：DataTrace AI Data Analyst Agent
 依赖基线：`PROD-001` 至 `PROD-014` 已完成
 契约入口：[`../api/openapi.yaml`](../api/openapi.yaml)
-主任务入口：[`PARALLEL_DEVELOPMENT_PLAN.md`](PARALLEL_DEVELOPMENT_PLAN.md)
+当前状态入口：[`PROJECT_STATUS.md`](PROJECT_STATUS.md)
+
+历史任务基线：[`PARALLEL_DEVELOPMENT_PLAN.md`](PARALLEL_DEVELOPMENT_PLAN.md)
 
 ## 1. 目标与成功标准
 

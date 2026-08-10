@@ -79,6 +79,10 @@ class SessionInfo(BaseModel):
     expires_in_seconds: int | None = Field(default=None, ge=1)
 
 
+class AuthConfig(BaseModel):
+    registration_enabled: bool
+
+
 class ProjectCreate(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=2000)

@@ -44,6 +44,16 @@ describe("mockApi contract behavior", () => {
     expect(claims.items.every((claim) => claim.limitations.length > 0)).toBe(true);
   });
 
+  it("creates a retrievable artifact for dataset version comparisons", async () => {
+    const job = await mockApi.compareDatasetVersions();
+    expect(job.resource_type).toBe("artifact");
+    expect(job.resource_id).toBe("art_version_compare");
+
+    const artifact = await mockApi.getArtifact(job.resource_id!);
+    expect(artifact.type).toBe("comparison");
+    expect(artifact.name).toBe("v2 与 v3 版本差异");
+  });
+
   it("keeps assistant conversations project-scoped and records feedback", async () => {
     const empty = await mockApi.listAssistantConversations("prj_unknown");
     expect(empty.items).toEqual([]);

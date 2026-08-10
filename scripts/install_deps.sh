@@ -3,15 +3,14 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BACKEND_DIR="$ROOT_DIR/backend"
-VENV_DIR="$BACKEND_DIR/.venv"
-PYTHON_BIN=${PYTHON_BIN:-python3}
+UV_BIN=${UV_BIN:-uv}
 
-if [ ! -x "$VENV_DIR/bin/python" ]; then
-  "$PYTHON_BIN" -m venv "$VENV_DIR"
+if ! command -v "$UV_BIN" >/dev/null 2>&1; then
+  echo "uv is required; install it from https://docs.astral.sh/uv/ first" >&2
+  exit 2
 fi
 
-"$VENV_DIR/bin/python" -m pip install --upgrade pip
-"$VENV_DIR/bin/python" -m pip install -e "$BACKEND_DIR[dev]"
+cd "$BACKEND_DIR"
+"$UV_BIN" sync --frozen --extra dev
 
-echo "Backend dependencies installed in $VENV_DIR"
-
+echo "Backend dependencies synchronized from backend/uv.lock"

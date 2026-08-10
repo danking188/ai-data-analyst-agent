@@ -72,6 +72,7 @@ class DatasetIngestionWorker:
                 version_id=version_id,
             )
             source_path = self.storage.resolve_key(version.source_storage_key)
+            staged_key = version.source_storage_key
             source_type = version.source_type
             parse_options = dict(version.parse_options_json)
         finally:
@@ -143,6 +144,13 @@ class DatasetIngestionWorker:
                     object_id=version_id,
                     request_id=f"job:{job_id}",
                 )
+        except Exception:
+            self.storage.rollback_ingestion(
+                staged_key=staged_key,
+                source_key=source_key,
+                data_key=data_key,
+            )
+            raise
         finally:
             write_session.close()
 

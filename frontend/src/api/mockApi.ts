@@ -269,6 +269,11 @@ export const mockApi = {
     return { subject_id: username, expires_in_seconds: 43_200 };
   },
 
+  async getAuthConfig() {
+    await wait(20);
+    return { registration_enabled: true };
+  },
+
   async register(username: string) {
     await wait();
     return { subject_id: username.trim().toLowerCase(), expires_in_seconds: 43_200 };
@@ -446,7 +451,7 @@ export const mockApi = {
     const artifact = artifacts.find((item) => item.artifact_id === artifactId);
     if (!artifact) throw new Error("Artifact 不存在");
     return {
-      download_url: `https://downloads.example.test/${artifactId}`,
+      download_url: `/api/v1/projects/prj_demo/artifacts/${artifactId}/file`,
       file_name: `${artifact.name}.json`,
       content_type: "application/json",
       expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
@@ -565,6 +570,29 @@ export const mockApi = {
 
   async compareDatasetVersions(): Promise<Job> {
     await wait();
+    if (!artifacts.some((artifact) => artifact.artifact_id === "art_version_compare")) {
+      artifacts.push({
+        artifact_id: "art_version_compare",
+        project_id: seedProject.project_id,
+        run_id: null,
+        dataset_version_id: "dsv_03JABC",
+        type: "comparison",
+        name: "v2 与 v3 版本差异",
+        producer: "dataset_version_comparator",
+        producer_version: "1.0.0",
+        status: "ready",
+        parameters: { base_version_id: "dsv_02JABC", target_version_id: "dsv_03JABC" },
+        result: {
+          row_count_delta: 1065,
+          column_count_delta: 0,
+          operation_summary: "修复收入字段缺失并规范套餐类型",
+        },
+        preview: null,
+        checksum: `sha256:${"version-compare".padEnd(64, "0")}`,
+        downloadable: true,
+        created_at: new Date().toISOString(),
+      });
+    }
     return createJob("version_comparison", "计算版本差异", "artifact", "art_version_compare");
   },
 

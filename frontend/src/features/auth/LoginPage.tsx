@@ -7,12 +7,14 @@ export function LoginPage({
   loginError,
   registerError,
   loading,
+  registrationEnabled,
   onLogin,
   onRegister,
 }: {
   loginError: Error | null;
   registerError: Error | null;
   loading: boolean;
+  registrationEnabled: boolean;
   onLogin: (username: string, password: string) => void;
   onRegister: (username: string, password: string) => void;
 }) {
@@ -47,7 +49,7 @@ export function LoginPage({
         <div className="login-brand"><span><BarChart3 size={23} /></span><strong>DataTrace</strong></div>
         <div className="auth-tabs" role="tablist" aria-label="账号操作">
           <button aria-selected={mode === "login"} onClick={() => switchMode("login")} role="tab" type="button"><LogIn size={16} />登录</button>
-          <button aria-selected={mode === "register"} onClick={() => switchMode("register")} role="tab" type="button"><UserPlus size={16} />注册</button>
+          {registrationEnabled ? <button aria-selected={mode === "register"} onClick={() => switchMode("register")} role="tab" type="button"><UserPlus size={16} />注册</button> : null}
         </div>
         <div className="login-heading">{mode === "login" ? <LockKeyhole size={22} /> : <UserPlus size={22} />}<div><h1>{mode === "login" ? "登录分析工作台" : "创建分析账号"}</h1><p>{mode === "login" ? "数据、分析结果和导出文件仅对授权用户开放。" : "每个账号拥有独立的项目和数据空间。"}</p></div></div>
         <label className="field"><span>用户名</span><input autoCapitalize="none" autoComplete="username" autoFocus pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,31}" required value={username} onChange={(event) => setUsername(event.target.value)} /></label>

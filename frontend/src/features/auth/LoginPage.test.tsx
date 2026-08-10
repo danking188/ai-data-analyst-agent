@@ -8,6 +8,7 @@ function renderPage(overrides: Partial<ComponentProps<typeof LoginPage>> = {}) {
     loginError: null,
     registerError: null,
     loading: false,
+    registrationEnabled: true,
     onLogin: vi.fn(),
     onRegister: vi.fn(),
     ...overrides,
@@ -44,5 +45,10 @@ describe("LoginPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
     expect(props.onRegister).toHaveBeenCalledWith("new-user", "safe-password-2026");
+  });
+
+  it("hides self-service registration when the deployment disables it", () => {
+    renderPage({ registrationEnabled: false });
+    expect(screen.queryByRole("tab", { name: "注册" })).not.toBeInTheDocument();
   });
 });

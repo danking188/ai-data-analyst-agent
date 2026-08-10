@@ -23,6 +23,7 @@ def app_client(
     monkeypatch.setenv("DATA_ROOT", str(data_root))
     monkeypatch.setenv("AUTH_MODE", "dev_token")
     monkeypatch.setenv("DEV_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-at-least-32-characters")
 
     from app.core.config import get_settings
     from app.persistence.session import get_database

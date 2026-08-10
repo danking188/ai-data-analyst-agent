@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
-  Bell,
   Bot,
   ChevronDown,
   Database,
@@ -57,6 +56,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => apiClient.listDatasetVersions(project!.project_id, dataset!.dataset_id),
     enabled: Boolean(project && dataset),
   });
+  const capabilitiesQuery = useQuery({
+    queryKey: ["system", "capabilities"],
+    queryFn: apiClient.getCapabilities,
+  });
 
   useEffect(() => {
     if (!project && projectsQuery.data?.items[0]) setProject(projectsQuery.data.items[0]);
@@ -81,7 +84,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <span>DataTrace</span>
       </div>
       <nav aria-label="主导航" className="sidebar__nav">
-        {navigation.map(({ to, label, icon: Icon }) => (
+        {navigation.filter(({ to }) => to !== "/assistant" || capabilitiesQuery.data?.llm.assistant !== false).map(({ to, label, icon: Icon }) => (
           <NavLink className={({ isActive }) => `nav-item ${isActive ? "is-active" : ""}`} end={to === "/"} key={to} to={to}>
             <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
             <span>{label}</span>
@@ -132,12 +135,24 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span>{project?.name ?? "正在载入项目"}</span>
             <ChevronDown size={15} />
           </button>
-          <button className="topbar__version" disabled={!version}>
-            {version ? `v${version.version_number} · ${version.kind}` : "无数据版本"}
-            <ChevronDown size={15} />
-          </button>
+          <select
+            aria-label="当前数据版本"
+            className="topbar__version"
+            disabled={!version}
+            onChange={(event) => {
+              const selected = versionsQuery.data?.items.find((item) => item.version_id === event.target.value);
+              if (selected) setVersion(selected);
+            }}
+            value={version?.version_id ?? ""}
+          >
+            {!version ? <option value="">无数据版本</option> : null}
+            {versionsQuery.data?.items.map((item) => (
+              <option key={item.version_id} value={item.version_id}>v{item.version_number} · {item.kind}</option>
+            ))}
+          </select>
           <div className="topbar__actions">
             <Button
+              aria-label="上传数据"
               disabled={!project}
               icon={<UploadCloud size={17} />}
               onClick={() => setUploadModalOpen(true)}
@@ -145,12 +160,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               上传数据
             </Button>
-            <Button icon={<Plus size={17} />} onClick={() => setProjectModalOpen(true)}>
+            <Button aria-label="新建项目" icon={<Plus size={17} />} onClick={() => setProjectModalOpen(true)}>
               新建项目
             </Button>
-            <button aria-label="通知" className="icon-button">
-              <Bell size={19} />
-            </button>
           </div>
         </header>
         <main className="page">{children}</main>

@@ -20,6 +20,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryFn: apiClient.getSession,
     retry: false,
   });
+  const authConfigQuery = useQuery({
+    queryKey: ["auth", "config"],
+    queryFn: apiClient.getAuthConfig,
+    staleTime: 300_000,
+  });
   const loginMutation = useMutation({
     mutationFn: ({ username, password }: { username: string; password: string }) =>
       apiClient.login(username, password),
@@ -46,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginError={loginMutation.error}
         registerError={registerMutation.error}
         loading={loginMutation.isPending || registerMutation.isPending}
+        registrationEnabled={authConfigQuery.data?.registration_enabled === true}
         onLogin={(username, password) => loginMutation.mutate({ username, password })}
         onRegister={(username, password) => registerMutation.mutate({ username, password })}
       />

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from jsonschema import RefResolver, validate
+from jsonschema import Draft202012Validator
 
 from app.main import create_app
 
@@ -32,11 +32,12 @@ def assert_matches_schema(
     schema_name: str,
     payload: dict[str, object],
 ) -> None:
-    validate(
-        instance=payload,
-        schema=contract_schema(contract, schema_name),
-        resolver=RefResolver.from_schema(contract),
-    )
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": f"#/components/schemas/{schema_name}",
+        "components": contract["components"],
+    }
+    Draft202012Validator(schema).validate(payload)
 
 
 def test_implemented_operation_ids_exist_in_shared_contract() -> None:
@@ -61,6 +62,7 @@ def test_implemented_operation_ids_exist_in_shared_contract() -> None:
     assert {
         "getHealth",
         "getReadiness",
+        "getAuthConfig",
         "getCapabilities",
         "listProjects",
         "createProject",

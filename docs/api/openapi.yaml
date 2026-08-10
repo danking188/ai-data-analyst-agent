@@ -102,6 +102,19 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
+  /auth/config:
+    get:
+      tags: [Auth]
+      operationId: getAuthConfig
+      summary: 获取公开登录能力
+      security: []
+      responses:
+        "200":
+          description: 当前账号注册策略
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthConfig"
   /auth/register:
     post:
       tags: [Auth]
@@ -1035,7 +1048,7 @@ paths:
     post:
       tags: [Evidence]
       operationId: createArtifactDownload
-      summary: 创建有时效下载地址
+      summary: 创建受认证保护的下载信息
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -1056,14 +1069,7 @@ paths:
     get:
       tags: [Evidence]
       operationId: downloadArtifactFile
-      summary: 使用有时效签名下载 Artifact 文件
-      security: []
-      parameters:
-        - name: token
-          in: query
-          required: true
-          schema:
-            type: string
+      summary: 使用当前认证会话下载 Artifact 文件
       responses:
         "200":
           description: Artifact 文件内容
@@ -1725,6 +1731,7 @@ components:
         - natural_language_analysis
         - llm
         - auth_enabled
+        - polling
       properties:
         api_version:
           type: string
@@ -1768,6 +1775,12 @@ components:
           minLength: 1
           maxLength: 500
           format: password
+    AuthConfig:
+      type: object
+      required: [registration_enabled]
+      properties:
+        registration_enabled:
+          type: boolean
     RegisterRequest:
       type: object
       additionalProperties: false

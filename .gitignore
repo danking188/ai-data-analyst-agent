@@ -14,6 +14,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
 *.egg-info/
 
@@ -24,6 +25,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
+output/playwright/
 
 # Local configuration and runtime data
 .env
@@ -31,7 +33,13 @@ test-results/
 .env.deploy
 .env.*
 !.env.deploy.example
+!backend/.env.example
+!frontend/.env.example
 backend/data/
+
+# Local user datasets (never publish by default)
+/random_sales_data.csv
+/random_sales_data_副本.csv
 
 # Temporary document renders
 docs/product/rendered-work/

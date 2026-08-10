@@ -75,7 +75,7 @@ describe("apiClient real mode contract calls", () => {
     const fetchMock = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
       const value = String(url);
       if (value.endsWith("/activate")) return Response.json(dataset);
-      if (value.endsWith("/versions?page=1&page_size=20")) return Response.json(page);
+      if (value.endsWith("/versions?page=1&page_size=100")) return Response.json(page);
       return Response.json({ error: { message: "unexpected" } }, { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -188,5 +188,22 @@ describe("apiClient real mode contract calls", () => {
         body: JSON.stringify({ arguments: { run_kind: "model" } }),
       }),
     );
+  });
+
+  it("rejects artifact download URLs outside the configured API origin", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      download_url: "https://attacker.example/file",
+      file_name: "report.html",
+      content_type: "text/html",
+      size_bytes: 10,
+      expires_at: "2026-07-13T01:00:00Z",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiClient } = await loadRealClient();
+
+    await expect(apiClient.downloadArtifact("prj_1", "art_1")).rejects.toMatchObject({
+      detail: { code: "CLIENT_CONTRACT_ERROR" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

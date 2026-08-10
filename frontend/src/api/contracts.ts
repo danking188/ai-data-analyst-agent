@@ -74,6 +74,10 @@ export interface SystemCapabilities {
   };
 }
 
+export interface AuthConfig {
+  registration_enabled: boolean;
+}
+
 export interface Project {
   project_id: string;
   name: string;

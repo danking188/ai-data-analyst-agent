@@ -1,209 +1,127 @@
-# Deployment Guide
+# Production Deployment Guide
 
-This project ships as two deployable services:
+The supported production topology is the root `docker-compose.yml`:
 
-- `backend`: FastAPI API, Alembic migrations, SQLite or SQLAlchemy-compatible database.
-- `frontend`: Vite static build served by Nginx, with `/api/v1/*` proxied to the backend.
+- `migrate`: one-shot Alembic release step.
+- `backend`: stateless FastAPI processes; no background jobs run in API processes.
+- `worker`: isolated database-backed analysis worker with a separate CPU/memory budget.
+- `frontend`: immutable Vite build served by Nginx and same-origin API proxy.
+- external PostgreSQL and private S3-compatible storage.
 
-## Local Docker Deployment
+The root single-container image remains available for platforms that cannot run multiple
+services. It supervises API and worker in one container and is therefore intended only for a
+controlled pilot; it does not provide independent scaling or failure isolation.
 
-Create a deployment environment file:
+The single-container pilot is also fail-closed: at runtime it still requires a non-placeholder
+`JWT_SECRET`, `LOGIN_PASSWORD`, exact public `TRUSTED_HOSTS`, `CORS_ORIGINS`, and the appropriate
+database/storage credentials. The image intentionally does not contain fallback production
+credentials. Override `PORT` only when the hosting platform does not use the default `7860`.
+
+## 1. Configure secrets and infrastructure
 
 ```bash
 cp .env.deploy.example .env.deploy
+chmod 600 .env.deploy
 ```
 
-Edit `.env.deploy` before exposing the service:
+Replace every example value. In particular:
 
-- Set `DEV_AUTH_TOKEN` to a long random value.
-- Set `JWT_SECRET` to a long random value.
-- Set `CORS_ORIGINS` to the public frontend origin.
-- Keep `VITE_API_BASE_URL=/api/v1` when using the bundled Nginx proxy.
+- use a TLS-required PostgreSQL URL and a database role scoped to this application;
+- use a private S3 bucket and scoped object credentials;
+- generate a random `JWT_SECRET` of at least 32 bytes;
+- store `LOGIN_PASSWORD`, database, S3 and LLM credentials in the platform secret manager;
+- set `CORS_ORIGINS` to the exact public HTTPS origin;
+- set `TRUSTED_HOSTS` to the public host plus the internal health-check hosts;
+- keep `REGISTRATION_ENABLED=false` unless self-service account creation is intentional;
+- keep `SESSION_COOKIE_SECURE=true`.
 
-Build and start:
+The app refuses to start in production with development authentication, insecure cookies,
+wildcard/missing trusted hosts, placeholder credentials, local persistence when external
+persistence is required, or insecure S3/LLM endpoints.
+
+TLS must terminate at a managed load balancer/CDN in front of port 8080. Do not expose the
+backend container port directly. Allow 105 MiB of transport body overhead while the app enforces
+a strict 100 MiB file limit; also configure a WAF
+or per-IP login/upload throttle, access logs, and health checks at `/api/v1/health/ready`.
+
+## 2. Run local release gates
 
 ```bash
-docker compose --env-file .env.deploy up --build
+ENV_FILE=.env.deploy ./scripts/production_gate.sh
+docker compose --env-file .env.deploy build
 ```
 
-Open:
+CI repeats backend lint/type/test/coverage, frontend type/test/build, OpenAPI validation,
+Compose rendering, image builds, dependency audits and a high/critical container scan. Every
+candidate image is built with an attached SBOM and provenance. Version tags publish signed
+multi-architecture images and evidence manifests as described in
+[`RELEASE_EVIDENCE.md`](./RELEASE_EVIDENCE.md).
 
-- Frontend: <http://localhost:8080>
-- Backend health: <http://localhost:8000/api/v1/health>
-
-Run deployment smoke checks:
+## 3. Deploy
 
 ```bash
-DEV_AUTH_TOKEN="$(grep '^DEV_AUTH_TOKEN=' .env.deploy | cut -d= -f2-)" ./scripts/deploy_smoke.sh
+docker compose --env-file .env.deploy up -d --build
+docker compose --env-file .env.deploy ps
 ```
 
-Stop:
+`backend` and `worker` start only after the `migrate` service exits successfully. The frontend
+starts only after backend readiness succeeds. All application images run as non-root users; the
+frontend Nginx process listens on container port 8080.
+
+Run an authenticated smoke test against the public HTTPS origin:
 
 ```bash
-docker compose --env-file .env.deploy down
-```
-
-Runtime data is stored in the `backend-data` Docker volume.
-
-## Production Notes
-
-The current baseline is suitable for local servers, internal demos, and first cloud migration.
-Before internet-facing production traffic, finish these hardening tasks:
-
-- Replace `AUTH_MODE=dev_token` with JWT validation and remove dev tokens from frontend builds.
-- Move from SQLite to a managed database when concurrent writes or backups matter.
-- Terminate TLS at a reverse proxy or cloud load balancer.
-- Configure persistent object storage for uploaded datasets and generated artifacts.
-- Export structured logs and add uptime/error monitoring.
-- Run `alembic upgrade head` as a release step before serving traffic.
-
-## Single-container Public Deployment
-
-The root `Dockerfile` is the production entry point for platforms that expose one
-container. It builds the React frontend, serves it from FastAPI, exposes the API
-under `/api/v1`, and listens on `0.0.0.0:${PORT:-7860}`.
-
-Required runtime secrets:
-
-- `LOGIN_USERNAME`: the account shown on the login page.
-- `LOGIN_PASSWORD`: a strong password stored only in the platform secret manager.
-- `JWT_SECRET`: at least 32 random bytes used to sign login and download tokens.
-- `REGISTRATION_ENABLED`: set to `true` to allow persistent self-service accounts.
-
-Startup deliberately fails when `LOGIN_PASSWORD` or `JWT_SECRET` is missing,
-too short, or still uses an example placeholder.
-
-Recommended runtime values for ModelScope Studio:
-
-```text
-APP_ENV=production
-AUTH_MODE=jwt
-REGISTRATION_ENABLED=true
-DATABASE_URL=postgresql://user:password@host/database?sslmode=require
-DATABASE_POOL_SIZE=5
-DATABASE_MAX_OVERFLOW=10
-DATABASE_POOL_RECYCLE_SECONDS=300
-REQUIRE_EXTERNAL_PERSISTENCE=true
-JOB_EXECUTION_MODE=worker
-STORAGE_BACKEND=s3
-STORAGE_CACHE_ROOT=/tmp/datatrace-storage-cache
-S3_BUCKET=private-bucket
-S3_ENDPOINT_URL=https://s3-compatible-endpoint
-S3_REGION=auto
-S3_ACCESS_KEY_ID=secret
-S3_SECRET_ACCESS_KEY=secret
-S3_PREFIX=datatrace
-S3_FORCE_PATH_STYLE=true
-# Leave empty for Supabase Storage. Use AES256 only when the provider supports it.
-S3_SERVER_SIDE_ENCRYPTION=
-SESSION_COOKIE_SECURE=true
-PORT=7860
-```
-
-`JOB_EXECUTION_MODE=worker` keeps long-running work out of API request processes. The
-production entrypoint supervises both the API and the database-backed worker; queued jobs
-remain in PostgreSQL and can be claimed after restarts.
-
-ModelScope must use the Docker SDK, and the account must have completed the
-platform's Docker build prerequisites. Production metadata uses external PostgreSQL;
-uploaded data and generated artifacts use private S3-compatible object storage. The
-container only keeps a disposable local cache under `STORAGE_CACHE_ROOT`.
-
-Release gates:
-
-- `GET /api/v1/health/ready` reports PostgreSQL and object storage as ready.
-- `alembic upgrade head` succeeds against PostgreSQL before Uvicorn starts.
-- A registered account can log in before and after a complete Studio redeployment.
-- An uploaded dataset and exported artifact can be read after the local cache is cleared.
-
-Current production deployment:
-
-- Studio: `https://www.modelscope.cn/studios/Ascano/ai-data-analyst-agent`
-- Application: `https://ascano-ai-data-analyst-agent.ms.show`
-- Visibility: public Studio endpoint with application-level JWT authentication
-- Storage: external PostgreSQL plus private Supabase S3-compatible object storage
-- Worker: database-backed runner supervised beside the API process
-- Verified: health, login, registration, CSV ingestion, cleaning, full analysis
-  run, artifact persistence, and cross-deployment account/data recovery
-
-The real modeling runtime additionally installs scikit-learn, SciPy and joblib. A model run
-produces a protected downloadable model Artifact, so the S3 credentials must permit object
-creation and retrieval under `S3_PREFIX`.
-
-### Optional LLM provider
-
-The LLM integration is disabled by default and does not affect deterministic analysis. Gates L1-L4
-provide evidence-grounded narratives, project-bound conversations, confirmed analysis/cleaning
-actions, bounded orchestration, quotas, circuit breaking, retention, and project metrics. Enable it
-only after the offline release gate and a canary smoke test.
-
-The first provider adapter uses an OpenAI-compatible Chat Completions endpoint:
-
-```text
-LLM_ENABLED=false
-LLM_PROVIDER=openai_compatible
-LLM_API_BASE=https://provider.example/v1
-LLM_API_KEY=secret-managed-provider-key
-LLM_MODEL=provider-model-name
-LLM_STRUCTURED_OUTPUT_MODE=json_schema
-LLM_ENABLE_THINKING=
-LLM_TEMPERATURE=0.1
-LLM_TIMEOUT_SECONDS=120
-LLM_MAX_OUTPUT_TOKENS=4096
-LLM_MAX_INPUT_TOKENS=24000
-LLM_MAX_CALLS_PER_TURN=4
-LLM_MAX_TOOL_CALLS_PER_TURN=8
-LLM_MAX_RETRIES=2
-LLM_DAILY_TOKEN_BUDGET_PER_USER=200000
-LLM_MAX_CONCURRENT_TURNS_PER_PROJECT=2
-LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
-LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS=60
-LLM_ALLOW_MASKED_SAMPLES=false
-LLM_RETENTION_DAYS=30
-LLM_ARCHIVE_INACTIVE_DAYS=90
-LLM_CANARY_SUBJECTS=internal-subject-id
-```
-
-Store `LLM_API_KEY` as a platform secret. Do not put it in `.env.deploy`, Git, database rows,
-job payloads, screenshots, or deployment logs. `LLM_API_BASE` must use HTTPS in production.
-ModelScope deployments require the inference endpoint URL, API key, and exact model name; a
-Studio access token alone does not identify an inference model.
-
-`/api/v1/system/capabilities` exposes `llm.evidence_narrative` and `llm.assistant` separately.
-Clients must keep conversation entry points hidden while `llm.assistant=false`. Provider
-authentication, rate-limit, timeout, network, malformed JSON, and schema mismatch failures are
-normalized to safe internal error codes without response bodies or credentials.
-
-`LLM_CANARY_SUBJECTS` is a comma-separated allowlist of authenticated subject IDs. Keep it set
-during the observation window; an empty value enables Assistant for every signed-in account.
-Immediate rollback is `LLM_ENABLED=false`, followed by a Studio redeploy. See
-[`LLM_CANARY_RUNBOOK.md`](./LLM_CANARY_RUNBOOK.md) for the release and rollback sequence.
-
-Build and test the single-container image locally:
-
-```bash
-docker build -t ai-data-analyst-public .
-docker run --rm -p 7860:7860 \
-  -e LOGIN_USERNAME=analyst \
-  -e LOGIN_PASSWORD=change-me \
-  -e JWT_SECRET=replace-with-at-least-32-random-characters \
-  -e SESSION_COOKIE_SECURE=false \
-  ai-data-analyst-public
-
-FRONTEND_URL=http://localhost:7860 \
-BACKEND_URL=http://localhost:7860/api/v1 \
-LOGIN_USERNAME=analyst LOGIN_PASSWORD=change-me \
+FRONTEND_URL=https://analytics.example.com \
+BACKEND_URL=https://analytics.example.com/api/v1 \
+LOGIN_USERNAME=analyst \
+LOGIN_PASSWORD='read-from-secret-manager' \
 ./scripts/deploy_smoke.sh
 ```
 
-## Platform Mapping
+Never pass real secrets in shared shell history or CI logs; inject them through the deployment
+platform.
 
-For a single VM, use the included `docker-compose.yml`.
+## 4. Backups and restore drill
 
-For managed platforms:
+Create an encrypted backup target outside the application host, then run:
 
-- Backend command: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Backend health path: `/api/v1/health`
-- Frontend build command: `pnpm install --frozen-lockfile && pnpm build`
-- Frontend output directory: `frontend/dist`
-- Required frontend build env: `VITE_API_BASE_URL`, `VITE_API_MODE=real`
+```bash
+DATABASE_URL='secret-managed-url' BACKUP_DIR=/explicit/secure/backup/path \
+  ./scripts/backup_postgres.sh
+
+S3_BUCKET=private-bucket S3_ENDPOINT_URL=https://objects.example.com \
+  ./scripts/verify_s3_versioning.sh
+```
+
+Quarterly, restore the newest archive into an isolated database and run the smoke test. The
+restore script is intentionally destructive and requires an exact confirmation value:
+
+```bash
+DATABASE_URL='isolated-restore-database-url' \
+BACKUP_FILE=/explicit/secure/backup/path/datatrace-YYYYMMDDTHHMMSSZ.dump \
+CONFIRM_RESTORE=RESTORE_DATATRACE_DATABASE \
+  ./scripts/restore_postgres.sh
+```
+
+Use provider-managed point-in-time recovery in addition to dumps. Set bucket versioning,
+retention and lifecycle policies at the object-storage provider; the application cannot enforce
+provider-side durability.
+
+## 5. Monitoring and rollback
+
+The API emits JSON production logs containing timestamp, level, request ID, method, path,
+status and duration, without request bodies or credentials. Collect stdout centrally and alert on:
+
+- readiness failures for two consecutive checks;
+- elevated HTTP 5xx or authentication failures;
+- worker restarts, stale leases or queued jobs older than the agreed SLO;
+- PostgreSQL saturation/replication lag and S3 errors;
+- memory pressure near the API or worker container limit;
+- LLM circuit-breaker openings and token-budget exhaustion when LLM is enabled.
+
+Rollback by restoring the previous immutable `IMAGE_TAG`; do not downgrade the database until a
+migration-specific rollback has been rehearsed. Disable LLM immediately with `LLM_ENABLED=false`
+if provider behavior is unsafe. See `LLM_CANARY_RUNBOOK.md` for staged enablement.
+
+The complete owner/sign-off checklist is in
+[`PRODUCTION_READINESS.md`](./PRODUCTION_READINESS.md).

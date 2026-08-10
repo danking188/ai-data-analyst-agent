@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-13T10:21:26.235946+00:00",
+  "generated_at": "2026-08-10T15:12:05.774795+00:00",
   "gate": "L4-offline",
   "status": "passed",
   "case_count": 50,
@@ -17,7 +17,8 @@
     "unique_case_ids": true,
     "all_cases_well_formed": true,
     "citation_cases_present": true,
-    "planning_cases_present": true
+    "planning_cases_present": true,
+    "deterministic_control_suite_passed": true
   },
   "thresholds": {
     "max_model_calls_per_turn": 4,
@@ -28,5 +29,20 @@
     "standard_question_success_percent": 90,
     "ordinary_p95_seconds": 30
   },
-  "live_canary_required": true
+  "live_canary_required": true,
+  "control_suite": {
+    "tests": [
+      "tests/unit/test_llm_evidence.py",
+      "tests/unit/test_llm_orchestrator.py",
+      "tests/unit/test_llm_provider.py",
+      "tests/unit/test_llm_schemas.py",
+      "tests/unit/test_llm_tools.py",
+      "tests/security/test_llm_red_team.py",
+      "tests/integration/test_assistant_worker.py",
+      "tests/integration/test_assistant_actions.py",
+      "tests/integration/test_llm_production_controls.py"
+    ],
+    "summary": "................................................                         [100%]"
+  },
+  "fixture_execution_note": "The 50 prompt cases define coverage categories; provider answer quality and latency are measured only by the required live canary. This offline gate executes deterministic citation, isolation, confirmation, quota, circuit-breaker and red-team tests."
 }

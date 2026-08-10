@@ -49,7 +49,8 @@ frontend/dist/
 
 - [前端说明](frontend/README.md)
 - [后端说明](backend/README.md)
-- [并行开发任务计划](docs/development/PARALLEL_DEVELOPMENT_PLAN.md)
+- [当前项目状态与发布进程](docs/development/PROJECT_STATUS.md)
+- [历史并行开发任务计划](docs/development/PARALLEL_DEVELOPMENT_PLAN.md)
 - [OpenAPI 契约](docs/api/openapi.yaml)
 
 安装后端依赖：
@@ -82,9 +83,10 @@ pnpm dev
 ruby scripts/validate_openapi.rb docs/api/openapi.yaml
 
 cd backend
-.venv/bin/ruff check app tests
-.venv/bin/mypy app
-.venv/bin/pytest
+uv sync --frozen --extra dev
+uv run ruff check app tests
+uv run mypy app
+uv run pytest --cov=app
 
 cd ../frontend
 pnpm typecheck
@@ -94,28 +96,30 @@ pnpm build
 
 ## 部署
 
-项目提供 Docker Compose 部署基线，包含 FastAPI 后端、Nginx 前端静态服务、
-API 反向代理、健康检查和 smoke 脚本。
+项目提供生产 Compose 拓扑，迁移、FastAPI API、数据库队列 Worker 与 Nginx 前端
+分别运行，并要求外部 PostgreSQL、私有 S3、HTTPS Cookie 和严格 Host 配置。
 
 ```bash
 cp .env.deploy.example .env.deploy
 docker compose --env-file .env.deploy up --build
-./scripts/deploy_smoke.sh
+ENV_FILE=.env.deploy ./scripts/production_gate.sh
 ```
 
-详细步骤见 [部署指南](docs/deployment/DEPLOYMENT.md)。
+详细步骤见 [部署指南](docs/deployment/DEPLOYMENT.md)；正式标签发布的摘要、SBOM、
+provenance、签名和迁移/Smoke 记录要求见
+[发布证据模板](docs/deployment/RELEASE_EVIDENCE.md)。
 
-面向单容器云平台时使用根目录 `Dockerfile`。它会在同一个 `7860` 端口提供
-登录页、React 前端、FastAPI API 和报告下载，并将运行数据写入
-`/mnt/workspace/data`。生产环境必须配置 `LOGIN_USERNAME`、`LOGIN_PASSWORD`
-和不少于 32 个字符的 `JWT_SECRET`；前端不再包含开发 token。
-设置 `REGISTRATION_ENABLED=true` 后，注册账号以 Scrypt 哈希写入持久化数据库，
-不同账号的项目和数据按项目成员关系隔离。
+面向只能运行一个容器的平台仍可使用根目录 `Dockerfile`，但 API 与 Worker 无法独立
+扩缩容和隔离故障，只建议用于受控试点。正式流量使用 Compose/编排平台的分离拓扑。
 
 生产环境支持外部 PostgreSQL 与 S3 兼容对象存储。设置 PostgreSQL
 `DATABASE_URL`、`STORAGE_BACKEND=s3` 和对应 `S3_*` 变量后，元数据、上传文件、
 数据版本和导出产物不再依赖容器磁盘。`/api/v1/health/ready` 会同时检查两项依赖。
-生产镜像还会监督独立的数据库队列 Worker，避免长任务占用 API 请求进程。
+生产 Compose 中 Worker 与 API 使用独立进程、内存和 CPU 配额，长任务不会在 API
+进程执行。数据库提交失败时，接入 Worker 会回滚已落到对象存储的最终对象。
+
+上线前还必须完成环境侧 TLS/WAF、PITR、S3 版本控制、告警、负载测试、恢复演练与
+隐私/法律签署；见 [生产就绪签署清单](docs/deployment/PRODUCTION_READINESS.md)。
 
 ## 真实分析与建模
 

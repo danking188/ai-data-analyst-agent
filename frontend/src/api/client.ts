@@ -11,6 +11,7 @@ import type {
   AssistantToolCall,
   AssistantTurnAccepted,
   Artifact,
+  AuthConfig,
   Claim,
   CleaningOperation,
   CleaningPlan,
@@ -35,6 +36,13 @@ import { jobSchema, projectPageSchema, projectSchema } from "./validators";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 const API_MODE = import.meta.env.VITE_API_MODE ?? "mock";
 const TOKEN = import.meta.env.VITE_DEV_AUTH_TOKEN ?? "";
+const CSRF_COOKIE_NAME = import.meta.env.VITE_CSRF_COOKIE_NAME ?? "datatrace_csrf";
+
+function readCookie(name: string): string | null {
+  const prefix = `${encodeURIComponent(name)}=`;
+  const entry = document.cookie.split("; ").find((value) => value.startsWith(prefix));
+  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+}
 
 function idempotencyKey() {
   return crypto.randomUUID();
@@ -44,6 +52,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     const headers = new Headers(init.headers);
     if (TOKEN) headers.set("Authorization", `Bearer ${TOKEN}`);
+    const method = (init.method ?? "GET").toUpperCase();
+    if (!TOKEN && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+      const csrfToken = readCookie(CSRF_COOKIE_NAME);
+      if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+    }
     if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
 
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -71,12 +84,40 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 }
 
+async function requestAll<T>(path: string): Promise<Page<T>> {
+  const pageSize = 100;
+  const maxPages = 100;
+  const items: T[] = [];
+  let total = 0;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const separator = path.includes("?") ? "&" : "?";
+    const result = await request<Page<T>>(`${path}${separator}page=${page}&page_size=${pageSize}`);
+    items.push(...result.items);
+    total = result.total;
+    if (!result.has_more) {
+      return { items, page: 1, page_size: pageSize, total, has_more: false };
+    }
+  }
+  throw new ApiError(500, {
+    code: "CLIENT_PAGINATION_LIMIT",
+    message: "列表超过客户端安全分页上限，请缩小查询范围",
+    request_id: "req_client",
+    retryable: false,
+    details: { max_pages: maxPages, page_size: pageSize },
+  });
+}
+
 export const apiClient = {
   mode: API_MODE,
 
   getCapabilities(): Promise<SystemCapabilities> {
     if (API_MODE === "mock") return mockApi.getCapabilities();
     return request("/system/capabilities");
+  },
+
+  getAuthConfig(): Promise<AuthConfig> {
+    if (API_MODE === "mock") return mockApi.getAuthConfig();
+    return request("/auth/config");
   },
 
   login(username: string, password: string): Promise<SessionInfo> {
@@ -107,7 +148,7 @@ export const apiClient = {
 
   listProjects(): Promise<Page<Project>> {
     if (API_MODE === "mock") return mockApi.listProjects().then((value) => projectPageSchema.parse(value));
-    return request<unknown>("/projects?page=1&page_size=20&status=active").then((value) => projectPageSchema.parse(value));
+    return requestAll<Project>("/projects?status=active").then((value) => projectPageSchema.parse(value));
   },
 
   createProject(input: ProjectCreate): Promise<Project> {
@@ -121,7 +162,7 @@ export const apiClient = {
 
   listDatasets(projectId: string): Promise<Page<Dataset>> {
     if (API_MODE === "mock") return mockApi.listDatasets(projectId);
-    return request(`/projects/${projectId}/datasets?page=1&page_size=20`);
+    return requestAll(`/projects/${projectId}/datasets`);
   },
 
   uploadDataset(projectId: string, file: File, datasetName: string): Promise<Job> {
@@ -138,12 +179,14 @@ export const apiClient = {
 
   listDatasetVersions(projectId: string, datasetId: string): Promise<Page<DatasetVersion>> {
     if (API_MODE === "mock") return mockApi.listDatasetVersions(datasetId);
-    return request(`/projects/${projectId}/datasets/${datasetId}/versions?page=1&page_size=20`);
+    return requestAll(`/projects/${projectId}/datasets/${datasetId}/versions`);
   },
 
-  previewDatasetVersion(projectId: string, datasetId: string, versionId: string): Promise<DataPreview> {
+  previewDatasetVersion(projectId: string, datasetId: string, versionId: string, cursor?: string | null): Promise<DataPreview> {
     if (API_MODE === "mock") return mockApi.previewDatasetVersion();
-    return request(`/projects/${projectId}/datasets/${datasetId}/versions/${versionId}/preview?limit=50`);
+    const params = new URLSearchParams({ limit: "50" });
+    if (cursor) params.set("cursor", cursor);
+    return request(`/projects/${projectId}/datasets/${datasetId}/versions/${versionId}/preview?${params}`);
   },
 
   getDatasetSchema(projectId: string, versionId: string): Promise<DatasetSchema> {
@@ -171,7 +214,7 @@ export const apiClient = {
 
   listQualityIssues(projectId: string, versionId: string): Promise<Page<QualityIssue>> {
     if (API_MODE === "mock") return mockApi.listQualityIssues(versionId);
-    return request(`/projects/${projectId}/dataset-versions/${versionId}/quality-issues?page=1&page_size=20`);
+    return requestAll(`/projects/${projectId}/dataset-versions/${versionId}/quality-issues`);
   },
 
   updateQualityIssue(
@@ -203,12 +246,12 @@ export const apiClient = {
 
   listRuns(projectId: string): Promise<Page<AnalysisRun>> {
     if (API_MODE === "mock") return mockApi.listRuns();
-    return request(`/projects/${projectId}/runs?page=1&page_size=20`);
+    return requestAll(`/projects/${projectId}/runs`);
   },
 
   listArtifacts(projectId: string, runId: string): Promise<Page<Artifact>> {
     if (API_MODE === "mock") return mockApi.listArtifacts();
-    return request(`/projects/${projectId}/runs/${runId}/artifacts?page=1&page_size=20`);
+    return requestAll(`/projects/${projectId}/runs/${runId}/artifacts`);
   },
 
   getArtifact(projectId: string, artifactId: string): Promise<Artifact> {
@@ -225,19 +268,45 @@ export const apiClient = {
 
   async downloadArtifact(projectId: string, artifactId: string): Promise<Download> {
     const download = await this.createArtifactDownload(projectId, artifactId);
+    const apiRoot = new URL(API_BASE_URL, window.location.origin);
+    const target = new URL(download.download_url, apiRoot);
+    const normalizedRootPath = apiRoot.pathname.replace(/\/$/, "");
+    if (target.origin !== apiRoot.origin || !target.pathname.startsWith(`${normalizedRootPath}/`)) {
+      throw new ApiError(500, {
+        code: "CLIENT_CONTRACT_ERROR",
+        message: "服务端返回了不受信任的下载地址",
+        request_id: "req_client",
+        retryable: false,
+        details: {},
+      });
+    }
+    const headers = new Headers();
+    if (TOKEN) headers.set("Authorization", `Bearer ${TOKEN}`);
+    const response = await fetch(target, { credentials: "include", headers });
+    if (!response.ok) {
+      throw new ApiError(response.status, {
+        code: "DOWNLOAD_FAILED",
+        message: `文件下载失败（${response.status}）`,
+        request_id: response.headers.get("x-request-id") ?? "req_client",
+        retryable: response.status >= 500,
+        details: {},
+      });
+    }
+    const objectUrl = URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
-    anchor.href = download.download_url;
+    anchor.href = objectUrl;
     anchor.download = download.file_name;
     anchor.rel = "noopener";
     document.body.append(anchor);
     anchor.click();
     anchor.remove();
+    URL.revokeObjectURL(objectUrl);
     return download;
   },
 
   listCleaningPlans(projectId: string, versionId: string): Promise<Page<CleaningPlan>> {
     if (API_MODE === "mock") return mockApi.listCleaningPlans();
-    return request(`/projects/${projectId}/cleaning-plans?source_version_id=${versionId}`);
+    return requestAll(`/projects/${projectId}/cleaning-plans?source_version_id=${versionId}`);
   },
 
   createCleaningPlan(projectId: string, versionId: string, operations: CleaningOperation[]): Promise<CleaningPlan> {
@@ -316,7 +385,7 @@ export const apiClient = {
 
   listAnalysisSpecs(projectId: string, versionId: string): Promise<Page<AnalysisSpec>> {
     if (API_MODE === "mock") return mockApi.listAnalysisSpecs();
-    return request(`/projects/${projectId}/analysis-specs?dataset_version_id=${versionId}`);
+    return requestAll(`/projects/${projectId}/analysis-specs?dataset_version_id=${versionId}`);
   },
 
   createAnalysisSpec(projectId: string, input: AnalysisSpecInput): Promise<AnalysisSpec> {
@@ -362,7 +431,7 @@ export const apiClient = {
 
   listClaims(projectId: string, runId: string): Promise<Page<Claim>> {
     if (API_MODE === "mock") return mockApi.listClaims();
-    return request(`/projects/${projectId}/runs/${runId}/claims?page=1&page_size=20`);
+    return requestAll(`/projects/${projectId}/runs/${runId}/claims`);
   },
 
   getClaim(projectId: string, claimId: string): Promise<Claim> {
@@ -379,7 +448,7 @@ export const apiClient = {
 
   listAssistantConversations(projectId: string): Promise<Page<AssistantConversation>> {
     if (API_MODE === "mock") return mockApi.listAssistantConversations(projectId);
-    return request(`/projects/${projectId}/assistant/conversations?page=1&page_size=50`);
+    return requestAll(`/projects/${projectId}/assistant/conversations`);
   },
 
   getAssistantMetrics(projectId: string): Promise<AssistantMetrics> {
@@ -413,9 +482,7 @@ export const apiClient = {
 
   listAssistantMessages(projectId: string, conversationId: string): Promise<Page<AssistantMessage>> {
     if (API_MODE === "mock") return mockApi.listAssistantMessages(conversationId);
-    return request(
-      `/projects/${projectId}/assistant/conversations/${conversationId}/messages?page=1&page_size=100`,
-    );
+    return requestAll(`/projects/${projectId}/assistant/conversations/${conversationId}/messages`);
   },
 
   createAssistantMessage(

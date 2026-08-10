@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import socket
 import time
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from sqlalchemy import select
 from app.analysis.tool_registry import default_tool_registry
 from app.persistence.orm.models import JobRow
 from app.persistence.session import Database, get_database
+from app.persistence.unit_of_work import UnitOfWork
+from app.services.jobs import JobService
 from app.storage.files import FileStorage, get_file_storage
 from app.workers.analysis import AnalysisRunWorker
 from app.workers.assistant import AssistantTurnWorker
@@ -42,6 +45,19 @@ SUPPORTED_JOB_KINDS = (
     "report_export",
     "assistant_turn",
 )
+logger = logging.getLogger(__name__)
+
+
+def recover_stale_jobs(database: Database) -> int:
+    session = database.session()
+    try:
+        with UnitOfWork(session):
+            recovered = JobService(session).recover_stale()
+        if recovered:
+            logger.warning("recovered %s stale jobs", recovered)
+        return recovered
+    finally:
+        session.close()
 
 
 def next_queued_job(database: Database) -> QueuedJob | None:
@@ -104,8 +120,12 @@ def main() -> None:
         return
     retention = AssistantRetentionWorker(database)
     next_retention_at = 0.0
+    next_recovery_at = 0.0
     while True:
         now = time.monotonic()
+        if now >= next_recovery_at:
+            recover_stale_jobs(database)
+            next_recovery_at = now + 60
         if now >= next_retention_at:
             retention.run()
             next_retention_at = now + 3600

@@ -20,6 +20,22 @@ def test_health_is_public_and_contract_shaped(app_client: TestClient) -> None:
     assert payload["version"]
     datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
     assert response.headers["X-Request-Id"].startswith("req_")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_public_auth_config_and_host_validation(app_client: TestClient) -> None:
+    config = app_client.get("/api/v1/auth/config")
+    assert config.status_code == 200
+    assert config.json() == {"registration_enabled": False}
+
+    rejected_host = app_client.get(
+        "/api/v1/health",
+        headers={"Host": "attacker.example"},
+    )
+    assert rejected_host.status_code == 400
 
 
 def test_readiness_checks_database_and_storage(app_client: TestClient) -> None:

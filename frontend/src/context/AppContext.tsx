@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { Dataset, DatasetVersion, Project } from "../api/contracts";
 
 interface AppSelection {
@@ -16,13 +16,22 @@ interface AppContextValue extends AppSelection {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [project, setProject] = useState<Project | null>(null);
-  const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [project, setProjectState] = useState<Project | null>(null);
+  const [dataset, setDatasetState] = useState<Dataset | null>(null);
   const [version, setVersion] = useState<DatasetVersion | null>(null);
+  const setProject = useCallback((nextProject: Project | null) => {
+    setProjectState(nextProject);
+    setDatasetState(null);
+    setVersion(null);
+  }, []);
+  const setDataset = useCallback((nextDataset: Dataset | null) => {
+    setDatasetState(nextDataset);
+    setVersion(null);
+  }, []);
 
   const value = useMemo(
     () => ({ project, dataset, version, setProject, setDataset, setVersion }),
-    [dataset, project, version],
+    [dataset, project, setDataset, setProject, version],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

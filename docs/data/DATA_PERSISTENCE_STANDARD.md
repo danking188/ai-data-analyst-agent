@@ -1130,4 +1130,4 @@ Schema
 - 数据库与文件校验和一致性测试通过；
 - OpenAPI 契约测试通过；
 - 日志、审计和错误响应不包含敏感原值；
-- 对应任务在 `PARALLEL_DEVELOPMENT_PLAN.md` 中更新状态。
+- 对应任务在 `../development/PROJECT_STATUS.md` 中更新状态。

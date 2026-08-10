@@ -272,7 +272,8 @@ def test_analysis_run_create_execute_get_and_list(
     assert download.status_code == 200
     assert_matches_schema(contract, "Download", download.json())
     assert download.json()["file_name"].endswith(".html")
-    downloaded_file = app_client.get(download.json()["download_url"])
+    assert "token=" not in download.json()["download_url"]
+    downloaded_file = app_client.get(download.json()["download_url"], headers=auth_headers)
     assert downloaded_file.status_code == 200
     assert downloaded_file.headers["content-type"].startswith("text/html")
     assert b"AI Data Analyst" in downloaded_file.content

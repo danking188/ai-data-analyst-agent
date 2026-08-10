@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronRight,
@@ -15,6 +15,7 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useAppContext } from "../../context/AppContext";
+import { useJobPolling } from "../../hooks/useJobPolling";
 import { formatDateTime, formatNumber, shortId } from "../../lib/format";
 import { queryKeys } from "../../lib/queryKeys";
 
@@ -107,24 +108,57 @@ export function DataPage() {
   const { project, dataset, version, setVersion } = useAppContext();
   const [tab, setTab] = useState<DataTab>("preview");
   const [search, setSearch] = useState("");
+  const [comparisonBaseId, setComparisonBaseId] = useState("");
+  const [comparisonJobId, setComparisonJobId] = useState<string | null>(null);
   const versionsQuery = useQuery({
     queryKey: queryKeys.versions(project?.project_id ?? "none", dataset?.dataset_id ?? "none"),
     queryFn: () => apiClient.listDatasetVersions(project!.project_id, dataset!.dataset_id),
     enabled: Boolean(project && dataset),
   });
-  const previewQuery = useQuery({
+  const previewQuery = useInfiniteQuery({
     queryKey: queryKeys.preview(project?.project_id ?? "none", dataset?.dataset_id ?? "none", version?.version_id ?? "none"),
-    queryFn: () => apiClient.previewDatasetVersion(project!.project_id, dataset!.dataset_id, version!.version_id),
+    queryFn: ({ pageParam }) => apiClient.previewDatasetVersion(project!.project_id, dataset!.dataset_id, version!.version_id, pageParam),
     enabled: Boolean(project && dataset && version && tab === "preview"),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
   const schemaQuery = useQuery({
     queryKey: queryKeys.schema(project?.project_id ?? "none", version?.version_id ?? "none"),
     queryFn: () => apiClient.getDatasetSchema(project!.project_id, version!.version_id),
     enabled: Boolean(project && version && tab === "schema"),
   });
+  const comparisonMutation = useMutation({
+    mutationFn: () => apiClient.compareDatasetVersions(
+      project!.project_id,
+      dataset!.dataset_id,
+      comparisonBaseId,
+      version!.version_id,
+    ),
+    onSuccess: (job) => setComparisonJobId(job.job_id),
+  });
+  const comparisonPolling = useJobPolling(comparisonJobId);
+  const comparisonArtifactQuery = useQuery({
+    queryKey: ["projects", project?.project_id, "comparison", comparisonPolling.job?.resource_id],
+    queryFn: () => apiClient.getArtifact(project!.project_id, comparisonPolling.job!.resource_id!),
+    enabled: Boolean(
+      project
+      && comparisonPolling.job?.status === "succeeded"
+      && comparisonPolling.job.resource_id,
+    ),
+  });
+  const preview = useMemo(() => {
+    const pages = previewQuery.data?.pages ?? [];
+    const first = pages[0];
+    return first ? {
+      ...first,
+      rows: pages.flatMap((page) => page.rows),
+      has_more: pages.at(-1)?.has_more ?? false,
+      next_cursor: pages.at(-1)?.next_cursor ?? null,
+    } : null;
+  }, [previewQuery.data?.pages]);
   const visibleColumns = useMemo(
-    () => previewQuery.data?.columns.filter((column) => column.name.toLowerCase().includes(search.toLowerCase())) ?? [],
-    [previewQuery.data?.columns, search],
+    () => preview?.columns.filter((column) => column.name.toLowerCase().includes(search.toLowerCase())) ?? [],
+    [preview?.columns, search],
   );
 
   if (!dataset || !version) {
@@ -169,19 +203,66 @@ export function DataPage() {
                 <table>
                   <thead><tr><th>#</th>{visibleColumns.map((column) => <th key={column.name}>{column.name}{column.masked ? <LockKeyhole aria-label="该列已掩码" size={13} /> : null}</th>)}</tr></thead>
                   <tbody>
-                    {previewQuery.data?.rows.map((row, index) => (
+                    {preview?.rows.map((row, index) => (
                       <tr key={index}><td>{index + 1}</td>{visibleColumns.map((column) => <td key={column.name}>{String(row[column.name] ?? "—")}</td>)}</tr>
                     ))}
                   </tbody>
                 </table>
-                <footer className="table-footer"><span>已显示前 {previewQuery.data?.rows.length ?? 0} 行</span><Button size="sm">加载下一页 <ChevronRight size={14} /></Button></footer>
+                <footer className="table-footer">
+                  <span>已显示 {preview?.rows.length ?? 0} 行</span>
+                  <Button
+                    disabled={!previewQuery.hasNextPage || previewQuery.isFetchingNextPage}
+                    onClick={() => previewQuery.fetchNextPage()}
+                    size="sm"
+                  >
+                    {previewQuery.isFetchingNextPage ? "正在加载…" : previewQuery.hasNextPage ? "加载下一页" : "已加载全部"} <ChevronRight size={14} />
+                  </Button>
+                </footer>
               </div>
             ) : null}
             {tab === "schema" ? schemaQuery.isLoading ? <LoadingBlock rows={8} /> : schemaQuery.data ? (
               <SchemaEditor columns={schemaQuery.data.columns} revision={schemaQuery.data.revision} />
             ) : null : null}
             {tab === "diff" ? (
-              <EmptyState title="选择比较版本" description="版本差异是异步任务。选择基础版本和比较版本后，系统会生成可追溯的比较 Artifact。" />
+              versionsQuery.data && versionsQuery.data.items.length > 1 ? (
+                <div className="form-stack">
+                  <label className="field">
+                    <span>基础版本</span>
+                    <select onChange={(event) => setComparisonBaseId(event.target.value)} value={comparisonBaseId}>
+                      <option value="">请选择基础版本</option>
+                      {versionsQuery.data.items.filter((item) => item.version_id !== version.version_id).map((item) => (
+                        <option key={item.version_id} value={item.version_id}>v{item.version_number} · {item.kind}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p>比较版本：v{version.version_number} · {version.kind}</p>
+                  <Button
+                    disabled={!comparisonBaseId || comparisonMutation.isPending || Boolean(comparisonJobId && !comparisonPolling.isTerminal)}
+                    onClick={() => comparisonMutation.mutate()}
+                    variant="primary"
+                  >
+                    {comparisonMutation.isPending ? "正在提交…" : "生成版本差异"}
+                  </Button>
+                  {comparisonPolling.job ? (
+                    <div className="job-progress" role="status">
+                      <strong>{comparisonPolling.job.current_step ?? comparisonPolling.job.status}</strong>
+                      <div className="progress-track"><i style={{ width: `${comparisonPolling.job.progress}%` }} /></div>
+                      {comparisonPolling.job.error ? <p className="form-error">{comparisonPolling.job.error.message}</p> : null}
+                    </div>
+                  ) : null}
+                  {comparisonArtifactQuery.data ? (
+                    <div className="comparison-result">
+                      <h3>{comparisonArtifactQuery.data.name}</h3>
+                      <pre>{JSON.stringify(comparisonArtifactQuery.data.result, null, 2)}</pre>
+                    </div>
+                  ) : null}
+                  {comparisonMutation.error || comparisonArtifactQuery.error ? (
+                    <p className="form-error">{comparisonMutation.error?.message ?? comparisonArtifactQuery.error?.message}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <EmptyState title="暂无可比较版本" description="至少需要两个数据版本才能生成差异 Artifact。" />
+              )
             ) : null}
           </div>
         </section>
@@ -195,8 +276,8 @@ export function DataPage() {
             <div><dt>父版本</dt><dd>{version.parent_version_id ? shortId(version.parent_version_id) : "原始版本"}</dd></div>
             <div><dt>状态</dt><dd><StatusBadge status={version.status} /></dd></div>
           </dl>
-          {previewQuery.data?.masked_columns.length ? (
-            <div className="privacy-note"><LockKeyhole size={18} /><p><strong>敏感数据已掩码</strong><span>{previewQuery.data.masked_columns.join("、")} 等字段按权限策略展示。</span></p></div>
+          {preview?.masked_columns.length ? (
+            <div className="privacy-note"><LockKeyhole size={18} /><p><strong>敏感数据已掩码</strong><span>{preview.masked_columns.join("、")} 等字段按权限策略展示。</span></p></div>
           ) : null}
         </aside>
       </div>

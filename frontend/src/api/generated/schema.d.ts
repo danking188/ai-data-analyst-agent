@@ -72,6 +72,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取公开登录能力 */
+        get: operations["getAuthConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/register": {
         parameters: {
             query?: never;
@@ -660,7 +677,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 创建有时效下载地址 */
+        /** 创建受认证保护的下载信息 */
         post: operations["createArtifactDownload"];
         delete?: never;
         options?: never;
@@ -678,7 +695,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 使用有时效签名下载 Artifact 文件 */
+        /** 使用当前认证会话下载 Artifact 文件 */
         get: operations["downloadArtifactFile"];
         put?: never;
         post?: never;
@@ -999,7 +1016,7 @@ export interface components {
             natural_language_analysis: boolean;
             llm: components["schemas"]["LLMCapabilities"];
             auth_enabled: boolean;
-            polling?: components["schemas"]["PollingPolicy"];
+            polling: components["schemas"]["PollingPolicy"];
         };
         LLMCapabilities: {
             evidence_narrative: boolean;
@@ -1009,6 +1026,9 @@ export interface components {
             username: string;
             /** Format: password */
             password: string;
+        };
+        AuthConfig: {
+            registration_enabled: boolean;
         };
         RegisterRequest: {
             username: string;
@@ -1831,6 +1851,26 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             default: components["responses"]["Error"];
+        };
+    };
+    getAuthConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前账号注册策略 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthConfig"];
+                };
+            };
         };
     };
     register: {
@@ -2971,9 +3011,7 @@ export interface operations {
     };
     downloadArtifactFile: {
         parameters: {
-            query: {
-                token: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 project_id: components["parameters"]["ProjectId"];

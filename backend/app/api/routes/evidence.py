@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Annotated, Literal
-from urllib.parse import urlencode
 
-import jwt
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -13,7 +11,6 @@ from app.api.dependencies import require_idempotency_key
 from app.api.schemas import Artifact, ArtifactPage, Claim, ClaimPage, Download
 from app.core.clock import utc_now
 from app.core.config import Settings, get_settings
-from app.domain.errors import DomainError
 from app.persistence.repositories.idempotency import IdempotencyRepository
 from app.persistence.session import get_session
 from app.persistence.unit_of_work import UnitOfWork
@@ -98,31 +95,14 @@ def create_artifact_download(
         if replay is not None:
             return Download.model_validate(replay)
         expires_at = utc_now() + timedelta(minutes=30)
-        token = jwt.encode(
-            {
-                "sub": principal.subject_id,
-                "project_id": project_id,
-                "artifact_id": artifact_id,
-                "exp": expires_at,
-                "aud": settings.jwt_audience,
-                "iss": settings.jwt_issuer,
-                "kind": "artifact_download",
-            },
-            settings.jwt_secret,
-            algorithm=settings.jwt_algorithm,
-        )
-        base_url = str(
-            request.url_for(
-                "download_artifact_file",
-                project_id=project_id,
-                artifact_id=artifact_id,
-            )
+        download_url = (
+            f"{settings.api_prefix}/projects/{project_id}/artifacts/{artifact_id}/file"
         )
         result = EvidenceService(session).create_download(
             project_id,
             artifact_id,
             subject_id=principal.subject_id,
-            download_url=f"{base_url}?{urlencode({'token': token})}",
+            download_url=download_url,
             expires_at=expires_at,
         )
         idempotency.record(
@@ -148,31 +128,13 @@ def create_artifact_download(
 def download_artifact_file(
     project_id: str,
     artifact_id: str,
-    token: str,
+    principal: Annotated[Principal, Depends(authenticate)],
     session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
-    try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm],
-            audience=settings.jwt_audience,
-            issuer=settings.jwt_issuer,
-        )
-    except jwt.PyJWTError as exc:
-        raise DomainError("AUTH_REQUIRED", "下载链接无效或已过期", 401) from exc
-    if (
-        payload.get("kind") != "artifact_download"
-        or payload.get("project_id") != project_id
-        or payload.get("artifact_id") != artifact_id
-        or not isinstance(payload.get("sub"), str)
-    ):
-        raise DomainError("AUTH_REQUIRED", "下载链接与目标文件不匹配", 401)
     artifact = EvidenceService(session).get_downloadable_artifact(
         project_id,
         artifact_id,
-        subject_id=str(payload["sub"]),
+        subject_id=principal.subject_id,
     )
     result = artifact.result_json if isinstance(artifact.result_json, dict) else {}
     return FileResponse(

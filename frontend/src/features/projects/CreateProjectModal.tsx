@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiClient } from "../../api/client";
 import { useAppContext } from "../../context/AppContext";
@@ -13,6 +13,7 @@ export function CreateProjectModal({ open, onClose }: { open: boolean; onClose: 
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const { setProject, setDataset, setVersion } = useAppContext();
+  const projectsQuery = useQuery({ queryKey: queryKeys.projects, queryFn: apiClient.listProjects });
   const mutation = useMutation({
     mutationFn: () =>
       apiClient.createProject({
@@ -53,9 +54,27 @@ export function CreateProjectModal({ open, onClose }: { open: boolean; onClose: 
       }
       onClose={close}
       open={open}
-      title="新建分析项目"
+      title="选择或新建分析项目"
     >
       <div className="form-stack">
+        {projectsQuery.data?.items.length ? (
+          <div className="project-picker" aria-label="已有项目">
+            {projectsQuery.data.items.map((project) => (
+              <button
+                className="context-card"
+                key={project.project_id}
+                onClick={() => {
+                  setProject(project);
+                  onClose();
+                }}
+              >
+                <strong>{project.name}</strong>
+                <span>{project.description || "暂无项目说明"}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <h3>新建项目</h3>
         <label className="field">
           <span>项目名称</span>
           <input

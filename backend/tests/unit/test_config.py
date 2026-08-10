@@ -126,7 +126,12 @@ def test_llm_api_key_is_hidden_from_settings_repr(monkeypatch: pytest.MonkeyPatc
 
 def test_production_llm_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("AUTH_MODE", "dev_token")
+    monkeypatch.setenv("MAX_UPLOAD_BYTES", "104857600")
+    monkeypatch.setenv("AUTH_MODE", "jwt")
+    monkeypatch.setenv("LOGIN_PASSWORD", "production-password-2026")
+    monkeypatch.setenv("JWT_SECRET", "production-jwt-secret-at-least-32-characters")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("TRUSTED_HOSTS", "analytics.example.com")
     monkeypatch.setenv("LLM_ENABLED", "true")
     monkeypatch.setenv("LLM_API_BASE", "http://provider.example/v1")
     monkeypatch.setenv("LLM_API_KEY", "private-provider-key")
@@ -134,6 +139,29 @@ def test_production_llm_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     try:
         with pytest.raises(ValueError, match="HTTPS"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_production_rejects_dev_auth_and_insecure_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("MAX_UPLOAD_BYTES", "104857600")
+    monkeypatch.setenv("TRUSTED_HOSTS", "analytics.example.com")
+    monkeypatch.setenv("AUTH_MODE", "dev_token")
+    get_settings.cache_clear()
+    with pytest.raises(ValueError, match="AUTH_MODE=jwt"):
+        get_settings()
+
+    monkeypatch.setenv("AUTH_MODE", "jwt")
+    monkeypatch.setenv("LOGIN_PASSWORD", "production-password-2026")
+    monkeypatch.setenv("JWT_SECRET", "production-jwt-secret-at-least-32-characters")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="SESSION_COOKIE_SECURE"):
             get_settings()
     finally:
         get_settings.cache_clear()

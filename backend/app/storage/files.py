@@ -134,13 +134,37 @@ class FileStorage:
         )
         source_target.parent.mkdir(parents=True, exist_ok=True)
         data_target.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(source_path, source_target)
-        source_target.chmod(0o440)
-        os.replace(parquet_path, data_target)
+        try:
+            os.replace(source_path, source_target)
+            source_target.chmod(0o440)
+            os.replace(parquet_path, data_target)
+        except Exception:
+            if source_target.exists() and not source_path.exists():
+                source_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(source_target, source_path)
+            data_target.unlink(missing_ok=True)
+            raise
         return (
             source_target.relative_to(self.data_root).as_posix(),
             data_target.relative_to(self.data_root).as_posix(),
         )
+
+    def rollback_ingestion(
+        self,
+        *,
+        staged_key: str,
+        source_key: str,
+        data_key: str,
+    ) -> None:
+        """Restore the staged source and remove finals after a database commit failure."""
+        staged_path = self._safe_path(*PurePosixPath(staged_key).parts)
+        source_path = self._safe_path(*PurePosixPath(source_key).parts)
+        data_path = self._safe_path(*PurePosixPath(data_key).parts)
+        if source_path.exists():
+            staged_path.parent.mkdir(parents=True, exist_ok=True)
+            staged_path.unlink(missing_ok=True)
+            os.replace(source_path, staged_path)
+        data_path.unlink(missing_ok=True)
 
     def commit_derived_parquet(
         self,
@@ -344,11 +368,38 @@ class S3FileStorage(FileStorage):
             parquet_path=parquet_path,
             source_type=source_type,
         )
-        self._upload_path(source_key, super().resolve_key(source_key))
-        self._upload_path(data_key, super().resolve_key(data_key))
+        try:
+            self._upload_path(source_key, super().resolve_key(source_key))
+            self._upload_path(data_key, super().resolve_key(data_key))
+        except Exception:
+            super().rollback_ingestion(
+                staged_key=staged_key,
+                source_key=source_key,
+                data_key=data_key,
+            )
+            self._delete_object(source_key)
+            self._delete_object(data_key)
+            raise
         if staged_key != source_key:
             self._delete_object(staged_key)
         return source_key, data_key
+
+    def rollback_ingestion(
+        self,
+        *,
+        staged_key: str,
+        source_key: str,
+        data_key: str,
+    ) -> None:
+        super().rollback_ingestion(
+            staged_key=staged_key,
+            source_key=source_key,
+            data_key=data_key,
+        )
+        staged_path = super().resolve_key(staged_key)
+        self._upload_path(staged_key, staged_path)
+        self._delete_object(source_key)
+        self._delete_object(data_key)
 
     def commit_derived_parquet(
         self,
