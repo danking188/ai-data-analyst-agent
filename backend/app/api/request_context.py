@@ -39,6 +39,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
                 "request_id": request_id,
                 "method": request.method,
                 "path": request.url.path,
+                "host": request.headers.get("host", "")[:255],
+                "forwarded_host": request.headers.get("x-forwarded-host", "")[:255],
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
             },
