@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
-from pandas.api.types import is_numeric_dtype
+from pandas.api.types import is_bool_dtype, is_numeric_dtype
 
 RULE_VERSION = "1.0.0"
 SUPPORTED_RULES = frozenset(
@@ -164,7 +164,11 @@ class QualityEngine:
         findings: list[QualityFinding] = []
         for column in frame.columns:
             series = frame[column]
-            if not is_numeric_dtype(series.dtype) or int(series.notna().sum()) < 4:
+            if (
+                is_bool_dtype(series.dtype)
+                or not is_numeric_dtype(series.dtype)
+                or int(series.notna().sum()) < 4
+            ):
                 continue
             q1 = float(series.quantile(0.25))
             q3 = float(series.quantile(0.75))
@@ -202,7 +206,11 @@ class QualityEngine:
         findings: list[QualityFinding] = []
         for column in frame.columns:
             series = frame[column]
-            if not is_numeric_dtype(series.dtype) or int(series.notna().sum()) < 8:
+            if (
+                is_bool_dtype(series.dtype)
+                or not is_numeric_dtype(series.dtype)
+                or int(series.notna().sum()) < 8
+            ):
                 continue
             skewness = float(series.skew())
             if pd.isna(skewness) or abs(skewness) < 2:

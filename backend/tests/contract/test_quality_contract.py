@@ -21,7 +21,10 @@ def _upload_quality_dataset(
         files={
             "file": (
                 "quality.csv",
-                BytesIO(b"id,value,constant\n1,10,x\n2,,x\n2,,x\n3,1000,x\n4,11,x\n"),
+                BytesIO(
+                    b"id,value,constant,returned\n"
+                    b"1,10,x,false\n2,,x,true\n2,,x,true\n3,1000,x,false\n4,11,x,false\n"
+                ),
                 "text/csv",
             )
         },

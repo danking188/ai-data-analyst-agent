@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pandas as pd
@@ -11,6 +12,8 @@ from app.persistence.session import Database, get_database
 from app.persistence.unit_of_work import UnitOfWork
 from app.quality.engine import QualityEngine
 from app.storage.files import FileStorage, get_file_storage
+
+logger = logging.getLogger(__name__)
 
 
 class QualityScanWorker:
@@ -33,6 +36,7 @@ class QualityScanWorker:
         except DomainError as exc:
             self._fail(job_id, exc)
         except Exception:
+            logger.exception("quality scan job %s failed", job_id)
             self._fail(
                 job_id,
                 DomainError(
