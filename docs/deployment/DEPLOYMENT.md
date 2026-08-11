@@ -20,6 +20,13 @@ entrypoint prepares the runtime-mounted workspace and then drops privileges befo
 API, or worker code starts. This profile does not require PostgreSQL, S3 or WAF services, but
 deleting or renaming the Studio can still remove its persisted workspace.
 
+Set `REGISTRATION_ENABLED=true` when friends need to create their own accounts. Registration is
+available from the login page; usernames and password hashes are stored in the configured database,
+never as plaintext passwords. Registered accounts can log out and sign in again, and their projects
+remain scoped to their own identity. Set the flag back to `false` after the intended users have
+registered to stop new sign-ups without disabling existing accounts. In the SQLite pilot profile,
+account durability has the same `/mnt/workspace` limitations as project and dataset metadata.
+
 The single-container pilot is also fail-closed: at runtime it still requires a non-placeholder
 `JWT_SECRET`, `LOGIN_PASSWORD`, exact public `TRUSTED_HOSTS`, `CORS_ORIGINS`, and the appropriate
 database/storage credentials. The image intentionally does not contain fallback production
