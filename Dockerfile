@@ -33,7 +33,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=7860
 
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app --home-dir /app app
+RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
 COPY backend/pyproject.toml backend/README.md backend/alembic.ini ./
 COPY backend/uv.lock ./
 COPY backend/app ./app
@@ -43,13 +46,14 @@ RUN --mount=type=cache,id=backend-uv-cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --link-mode=copy \
     && rm -f /bin/uv /bin/uvx
 COPY --from=frontend-build /build/frontend/dist ./frontend-dist
+COPY scripts/pilot-entrypoint.sh /usr/local/bin/pilot-entrypoint
 
 RUN mkdir -p /mnt/workspace/data /tmp/datatrace-storage-cache \
-    && chown -R app:app /mnt/workspace/data /tmp/datatrace-storage-cache
+    && chown -R app:app /mnt/workspace/data /tmp/datatrace-storage-cache \
+    && chmod 0755 /usr/local/bin/pilot-entrypoint
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-USER app
-
 EXPOSE 7860
+ENTRYPOINT ["pilot-entrypoint"]
 CMD ["python", "-m", "app.production"]

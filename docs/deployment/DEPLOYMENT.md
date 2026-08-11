@@ -12,6 +12,13 @@ The root single-container image remains available for platforms that cannot run 
 services. It supervises API and worker in one container and is therefore intended only for a
 controlled pilot; it does not provide independent scaling or failure isolation.
 
+For ModelScope friend/beta deployments, keep SQLite and local object files under
+`/mnt/workspace/data`, set `REQUIRE_EXTERNAL_PERSISTENCE=false` and `STORAGE_BACKEND=local`, and
+use the platform-provided HTTPS endpoint. The pilot entrypoint prepares the runtime-mounted
+workspace and then drops privileges before migrations, API, or worker code starts. This profile
+does not require PostgreSQL, S3 or WAF services, but deleting or renaming the Studio can still
+remove its persisted workspace.
+
 The single-container pilot is also fail-closed: at runtime it still requires a non-placeholder
 `JWT_SECRET`, `LOGIN_PASSWORD`, exact public `TRUSTED_HOSTS`, `CORS_ORIGINS`, and the appropriate
 database/storage credentials. The image intentionally does not contain fallback production
