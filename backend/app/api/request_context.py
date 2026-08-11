@@ -73,12 +73,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             and not has_bearer
         )
         if requires_token:
-            cookie_token = request.cookies.get(self.settings.csrf_cookie_name, "")
-            header_token = request.headers.get("X-CSRF-Token", "")
-            if not cookie_token or not header_token or not secrets.compare_digest(
-                cookie_token,
-                header_token,
-            ):
+            if self.settings.csrf_mode == "origin":
+                valid_request = request.headers.get("Origin", "") in self.settings.cors_origins
+            else:
+                cookie_token = request.cookies.get(self.settings.csrf_cookie_name, "")
+                header_token = request.headers.get("X-CSRF-Token", "")
+                valid_request = bool(
+                    cookie_token
+                    and header_token
+                    and secrets.compare_digest(cookie_token, header_token)
+                )
+            if not valid_request:
                 request_id = getattr(request.state, "request_id", new_request_id())
                 return JSONResponse(
                     status_code=403,

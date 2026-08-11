@@ -45,15 +45,16 @@ def _set_session_cookie(
         samesite="lax",
         path="/",
     )
-    response.set_cookie(
-        key=settings.csrf_cookie_name,
-        value=secrets.token_urlsafe(32),
-        max_age=max_age,
-        httponly=False,
-        secure=settings.session_cookie_secure,
-        samesite="lax",
-        path="/",
-    )
+    if settings.csrf_mode == "double_submit":
+        response.set_cookie(
+            key=settings.csrf_cookie_name,
+            value=secrets.token_urlsafe(32),
+            max_age=max_age,
+            httponly=False,
+            secure=settings.session_cookie_secure,
+            samesite="lax",
+            path="/",
+        )
     return max_age
 
 
@@ -114,12 +115,13 @@ def logout(
         httponly=True,
         samesite="lax",
     )
-    response.delete_cookie(
-        settings.csrf_cookie_name,
-        path="/",
-        secure=settings.session_cookie_secure,
-        httponly=False,
-        samesite="lax",
-    )
+    if settings.csrf_mode == "double_submit":
+        response.delete_cookie(
+            settings.csrf_cookie_name,
+            path="/",
+            secure=settings.session_cookie_secure,
+            httponly=False,
+            samesite="lax",
+        )
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

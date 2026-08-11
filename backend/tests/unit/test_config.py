@@ -3,6 +3,16 @@ import pytest
 from app.core.config import get_settings
 
 
+def test_csrf_mode_is_strict(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CSRF_MODE", "disabled")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="CSRF_MODE"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
 def test_s3_backend_requires_a_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STORAGE_BACKEND", "s3")
     monkeypatch.delenv("S3_BUCKET", raising=False)

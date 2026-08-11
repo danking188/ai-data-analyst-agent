@@ -62,6 +62,7 @@ class Settings:
     registration_enabled: bool
     session_cookie_name: str
     csrf_cookie_name: str
+    csrf_mode: str
     session_cookie_secure: bool
     session_ttl_seconds: int
     cors_origins: tuple[str, ...]
@@ -135,6 +136,7 @@ def get_settings() -> Settings:
         in {"1", "true", "yes"},
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "datatrace_session"),
         csrf_cookie_name=os.getenv("CSRF_COOKIE_NAME", "datatrace_csrf"),
+        csrf_mode=os.getenv("CSRF_MODE", "double_submit").lower(),
         session_cookie_secure=os.getenv("SESSION_COOKIE_SECURE", "false").lower()
         in {"1", "true", "yes"},
         session_ttl_seconds=int(os.getenv("SESSION_TTL_SECONDS", "43200")),
@@ -229,6 +231,10 @@ def get_settings() -> Settings:
         raise ValueError("session and CSRF cookie names must not be empty")
     if settings.session_cookie_name == settings.csrf_cookie_name:
         raise ValueError("session and CSRF cookie names must be different")
+    if settings.csrf_mode not in {"double_submit", "origin"}:
+        raise ValueError("CSRF_MODE must be double_submit or origin")
+    if settings.csrf_mode == "origin" and not settings.cors_origins:
+        raise ValueError("CORS_ORIGINS is required when CSRF_MODE=origin")
     if not settings.trusted_hosts:
         raise ValueError("TRUSTED_HOSTS must contain at least one host")
     if settings.auth_mode == "jwt" and not settings.login_password:

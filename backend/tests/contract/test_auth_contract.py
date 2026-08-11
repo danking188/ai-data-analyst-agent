@@ -11,6 +11,85 @@ from sqlalchemy import select
 from app.security.passwords import verify_password
 
 
+def test_origin_csrf_mode_uses_one_session_cookie(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("API_PREFIX", "/api/v1")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'origin-auth.db'}")
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("AUTH_MODE", "jwt")
+    monkeypatch.setenv("LOGIN_USERNAME", "pilot")
+    monkeypatch.setenv("LOGIN_PASSWORD", "test-password")
+    monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-at-least-32-characters")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("CSRF_MODE", "origin")
+    monkeypatch.setenv("CORS_ORIGINS", "http://testserver")
+
+    from app.core.config import get_settings
+    from app.persistence.session import get_database
+
+    get_settings.cache_clear()
+    get_database.cache_clear()
+    command.upgrade(Config("alembic.ini"), "head")
+
+    from app.main import create_app
+
+    try:
+        with TestClient(create_app()) as client:
+            logged_in = client.post(
+                "/api/v1/auth/login",
+                json={"username": "pilot", "password": "test-password"},
+            )
+            assert logged_in.status_code == 200
+            assert client.cookies.get("datatrace_session")
+            assert client.cookies.get("datatrace_csrf") is None
+
+            project_payload = {
+                "name": "Origin 项目",
+                "timezone": "Asia/Shanghai",
+                "language": "zh-CN",
+            }
+            missing_origin = client.post(
+                "/api/v1/projects",
+                headers={"Idempotency-Key": "origin-missing"},
+                json=project_payload,
+            )
+            assert missing_origin.status_code == 403
+
+            wrong_origin = client.post(
+                "/api/v1/projects",
+                headers={
+                    "Idempotency-Key": "origin-wrong",
+                    "Origin": "https://evil.example",
+                },
+                json=project_payload,
+            )
+            assert wrong_origin.status_code == 403
+
+            created = client.post(
+                "/api/v1/projects",
+                headers={
+                    "Idempotency-Key": "origin-valid",
+                    "Origin": "http://testserver",
+                },
+                json=project_payload,
+            )
+            assert created.status_code == 201
+
+            logged_out = client.post(
+                "/api/v1/auth/logout",
+                headers={"Origin": "http://testserver"},
+            )
+            assert logged_out.status_code == 204
+            assert client.get("/api/v1/auth/session").status_code == 401
+    finally:
+        get_database().engine.dispose()
+        get_database.cache_clear()
+        get_settings.cache_clear()
+
+
 def test_jwt_login_cookie_session_and_logout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
