@@ -12,22 +12,22 @@
     "generate:api": "openapi-typescript ../docs/api/openapi.yaml -o src/api/generated/schema.d.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.83.0",
-    "lucide-react": "^0.468.0",
+    "@tanstack/react-query": "^5.101.4",
+    "lucide-react": "^1.31.0",
     "plotly.js-dist-min": "^3.0.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-plotly.js": "^2.6.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-plotly.js": "^4.1.0",
     "react-router-dom": "^7.18.2",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.15.34",
     "@types/plotly.js": "^2.35.8",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@types/react-plotly.js": "^2.6.3",
     "@vitejs/plugin-react": "^4.6.0",
     "jsdom": "^26.1.0",
