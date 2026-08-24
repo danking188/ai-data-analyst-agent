@@ -20,7 +20,7 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
 COPY . .
 RUN pnpm build
 
-FROM nginx:1.30.4-alpine-slim AS runtime
+FROM nginx:1.31.4-alpine-slim AS runtime
 
 COPY nginx-main.conf /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
