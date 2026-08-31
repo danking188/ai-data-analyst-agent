@@ -14,7 +14,7 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_API_MODE=${VITE_API_MODE}
 RUN pnpm build
 
-FROM ghcr.io/astral-sh/uv:0.11.26 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.7 AS uv
 
 FROM python:3.12-slim AS runtime
 
