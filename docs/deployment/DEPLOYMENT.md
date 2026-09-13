@@ -1,5 +1,18 @@
 # Production Deployment Guide
 
+## Current public deployment (2026-09-14)
+
+[DataTrace](https://8.222.221.236.sslip.io/) is running on an Aliyun Singapore lightweight
+server. Self-registration is enabled. The current pilot uses Caddy, a single application container,
+SQLite and persistent host files; it does not use the separated PostgreSQL/S3 topology below.
+Public readiness and the registration flag were rechecked on 2026-09-14. The full registration,
+upload-to-report, reboot recovery and 500-request acceptance were completed on 2026-09-11.
+See [target evidence](../quality/SMALL_TRAFFIC_ACCEPTANCE.md) and
+[Aliyun operations](./ALIYUN_LIGHTWEIGHT.md). The pilot decision is `CONDITIONAL GO`;
+off-host backups, external alert delivery, an owned domain and renewal arrangements remain pending.
+
+## Separated production topology
+
 The supported production topology is the root `docker-compose.yml`:
 
 - `migrate`: one-shot Alembic release step.
@@ -11,6 +24,12 @@ The supported production topology is the root `docker-compose.yml`:
 The root single-container image remains available for platforms that cannot run multiple
 services. It supervises API and worker in one container and is therefore intended only for a
 controlled pilot; it does not provide independent scaling or failure isolation.
+
+For a lowest-cost, single-project deployment on an Alibaba Cloud Simple Application Server,
+use the resource-constrained profile and host bootstrap in
+[`ALIYUN_LIGHTWEIGHT.md`](./ALIYUN_LIGHTWEIGHT.md). It is designed for a 2 vCPU / 2 GB small-traffic
+pilot with host persistence and automatic HTTPS, not for high availability. Keep off-host backups
+and migrate to the separated production topology when uptime or concurrency requirements grow.
 
 For ModelScope friend/beta deployments, keep SQLite and local object files under
 `/mnt/workspace/data`, set `REQUIRE_EXTERNAL_PERSISTENCE=false` and `STORAGE_BACKEND=local`, and
@@ -27,9 +46,15 @@ remain scoped to their own identity. Set the flag back to `false` after the inte
 registered to stop new sign-ups without disabling existing accounts. In the SQLite pilot profile,
 account durability has the same `/mnt/workspace` limitations as project and dataset metadata.
 
+ModelScope free hardware can sleep or expire and must not be presented as a 24×7 SLA. For a
+long-lived public pilot, use external PostgreSQL and private S3/OSS even when the application
+container remains on ModelScope, and treat cold starts as an expected platform state. The current
+platform rules, audited Studio state and release gate are maintained in
+[`MODELSCOPE_LONG_RUNNING.md`](./MODELSCOPE_LONG_RUNNING.md).
+
 The single-container pilot is also fail-closed: at runtime it still requires a non-placeholder
-`JWT_SECRET`, `LOGIN_PASSWORD`, exact public `TRUSTED_HOSTS`, `CORS_ORIGINS`, and the appropriate
-database/storage credentials. The image intentionally does not contain fallback production
+`AUTH_MODE=jwt`, `JWT_SECRET`, `LOGIN_PASSWORD`, exact public `TRUSTED_HOSTS`, `CORS_ORIGINS`, and
+the appropriate database/storage credentials. The image intentionally does not contain fallback production
 credentials. Override `PORT` only when the hosting platform does not use the default `7860`.
 
 ## 1. Configure secrets and infrastructure
@@ -95,6 +120,30 @@ LOGIN_PASSWORD='read-from-secret-manager' \
 
 Never pass real secrets in shared shell history or CI logs; inject them through the deployment
 platform.
+
+Before opening access, run the repeatable small-traffic acceptance profile and retain its JSON
+summary with the release record:
+
+```bash
+LOGIN_USERNAME='read-from-secret-manager' \
+LOGIN_PASSWORD='read-from-secret-manager' \
+python3 scripts/small_traffic_test.py \
+  --base-url https://analytics.example.com \
+  --requests 500 --concurrency 8 --require-authenticated
+```
+
+Thresholds, private-platform authentication and the test report template are documented in
+[`../quality/SMALL_TRAFFIC_ACCEPTANCE.md`](../quality/SMALL_TRAFFIC_ACCEPTANCE.md).
+
+Then run the disposable representative workflow to verify upload, quality, analysis, evidence and
+report download using the same smoke account:
+
+```bash
+LOGIN_USERNAME='read-from-secret-manager' \
+LOGIN_PASSWORD='read-from-secret-manager' \
+python3 scripts/production_workflow_smoke.py \
+  --base-url https://analytics.example.com
+```
 
 ## 4. Backups and restore drill
 

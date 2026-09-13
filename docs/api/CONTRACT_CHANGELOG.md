@@ -15,7 +15,7 @@
 - 新增 Assistant v0 契约：项目会话、消息、计划确认、重试、取消和回答反馈。
 - 新增结构化 `AssistantPlan`、`AssistantAnswer`、证据引用和工具调用状态。
 - `Job.kind` 增加 `assistant_turn`，用于后续异步大模型编排。
-- `SystemCapabilities.llm` 分别声明 `evidence_narrative` 和 `assistant`；P1 只开启证据解读，Assistant 在 P2 完成前保持关闭。
+- `SystemCapabilities.llm` 分别声明 `evidence_narrative` 和 `assistant`；当前两项均由运行时 `LLM_ENABLED` 能力开关控制。
 - 报告导出格式增加 `ai_narrative`，异步生成绑定 Artifact/Claim 的结构化证据解读 Artifact。
 - 兼容性：Minor。现有接口和字段保持兼容。
 
@@ -32,8 +32,8 @@
 ### Backend impact
 
 - 后端 Artifact schema 与现有持久化模型保持一致。
-- LLM-0 Provider 基础和 LLM-1 证据型解读已实现；Assistant 路由、持久化和 `assistant_turn` Worker 在 LLM-2 实现。
-- `LLM_ENABLED=true` 当前只开放报告页证据解读，不表示对话式 Assistant 已可用。
+- LLM-0～LLM-4 已实现；Assistant 路由、持久化、`assistant_turn` Worker、受控工具执行、配额、熔断和审计均已接入。
+- 完成 Provider 配置且设置 `LLM_ENABLED=true` 时，报告页证据解读与对话式 Assistant 均可用；正式放量仍取决于生产环境签署和灰度策略。
 
 ## 1.0.0 — 2026-07-09
 

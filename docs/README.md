@@ -2,6 +2,10 @@
 
 本目录是项目开发、契约与发布状态的共享事实源。
 
+在线网站：[DataTrace](https://8.222.221.236.sslip.io/)。截至 2026-09-14，阿里云小规模
+试点已上线且自助注册开启；最新进度见[项目状态](development/PROJECT_STATUS.md)，
+注册联调、完整分析流程和重启恢复证据见[线上验收](quality/SMALL_TRAFFIC_ACCEPTANCE.md)。
+
 ## 唯一事实源
 
 1. 产品范围与验收：`product/AI_Data_Analyst_Agent_产品需求规格说明书_V1.0.docx`
@@ -16,6 +20,10 @@
 10. 大模型能力扩展计划：`development/LLM_EXTENSION_PLAN.md`
 11. 大模型接入架构决策：`development/LLM_ARCHITECTURE_DECISION.md`
 12. 正式发布证据模板：`deployment/RELEASE_EVIDENCE.md`
+13. 小流量生产验收：`quality/SMALL_TRAFFIC_ACCEPTANCE.md`
+14. 历史本地候选验收报告（2026-09-09）：`quality/RELEASE_ACCEPTANCE_2026-09-09.md`
+15. ModelScope 长期运行与公开试点门禁：`deployment/MODELSCOPE_LONG_RUNNING.md`
+16. 当前阿里云部署方式：`deployment/ALIYUN_LIGHTWEIGHT.md`
 
 发生冲突时，优先级为：
 

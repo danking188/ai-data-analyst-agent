@@ -4,6 +4,28 @@ This file defines the evidence that must be attached to every production release
 results are useful preflight evidence, but they do not replace immutable registry digests or the
 environment sign-off in `PRODUCTION_READINESS.md`.
 
+## Aliyun registration release and documentation sync
+
+Public website: [DataTrace](https://8.222.221.236.sslip.io/).
+The 2026-09-11 release enabled public self-registration and added visible registration rules and
+authentication error reset on mode changes. A new account completed automatic login, private
+project creation, logout/relogin, upload, quality scan, analysis and HTML report download.
+The workflow produced 10 artifacts and 2 validated claims. A full server reboot retained the
+account and project, and the bootstrap administrator could not list that project.
+
+Local checks passed 151 backend and 28 frontend tests, TypeScript and the production build.
+The server-side 500-request/concurrency-8 read probe had zero failures, 35.093 RPS and P95
+354.913 ms. The workstation probe also had zero failures but P95 3,299.814 ms exceeded the
+2-second end-to-end threshold. Browser automation was unavailable; the release has component,
+static-bundle and API evidence, not completed GUI end-to-end evidence.
+
+On 2026-09-14, public readiness again returned `ready` with database/storage `ok`, and auth config
+confirmed registration was enabled. This update synchronizes documentation only; the deployed
+application remains base commit `82eb7f8` plus local source/deployment changes not yet published
+as a complete immutable release. Do not treat the documentation commit as the deployed source SHA
+or as evidence of fresh CI, image scanning or signing. Detailed results and remaining operational
+conditions are in [small-traffic acceptance](../quality/SMALL_TRAFFIC_ACCEPTANCE.md).
+
 ## Automated release artifacts
 
 Pushing a `v*` tag, or manually dispatching `Release container images`, first reruns CI and the
@@ -31,6 +53,7 @@ the deployment record.
 | Signature | Sigstore verification result for every deployed digest |
 | Migration | Production-like PostgreSQL rehearsal record |
 | Smoke | Login, upload, analysis, artifact download and readiness evidence |
+| Small traffic | JSON summary for 500 requests at concurrency 8, with ≤1% errors and P95 ≤2s |
 | Rollback | Previous known-good image digests and tested rollback command |
 | Approval | Release manager, Security, DBA/SRE and Product names/dates |
 
@@ -45,3 +68,30 @@ successfully ran migrations, the worker, API and readiness probe with disposable
 These local tags and digests are intentionally not treated as release identifiers. `ENV-109`
 remains open until a green immutable CI SHA is published, signed and rehearsed in the target
 environment.
+
+### 2026-09-08 workspace candidate
+
+The current workspace (base commit `82eb7f8ea4268321c920c0c097547f9ccbbe7d60` plus the
+documented local release-hardening changes) passed the repository gates: Ruff, strict Mypy,
+151 backend tests at 82.78% coverage, 26 frontend tests, TypeScript, the frontend production
+build, OpenAPI 50-path/63-operation/398-reference validation, the 50-case offline LLM gate,
+Compose rendering, shell/Python syntax and repository hygiene. Production dependency audits
+reported no known Python or frontend vulnerabilities.
+
+The rebuilt pilot image `datatrace-pilot:small-traffic-rc` has local image identifier
+`sha256:4d0b4b18de2a75f9761291cfa26ed5fa31e013c0e1c58d3e7da857df14950021`.
+It rejected a missing explicit production auth mode, then passed authenticated deployment smoke,
+a disposable upload-to-report workflow, and 500 read requests at concurrency 8 with zero errors
+and final post-hardening P95 latency of 9.738 ms (1,209.067 requests/s). Cross-origin redirects
+and external signed download URLs are verified not to receive session or platform credentials.
+A PostgreSQL 16 rehearsal applied migrations to
+`20260713_0002`, verified backup checksum
+`9d6ccc6a89382cca62d78fce7e00621c28517095b69870fca1fda187e7ed1013`, and restored 28
+public tables into an isolated database at the same migration head.
+
+This image identifier is local and mutable, and the source changes are not yet represented by an
+immutable commit. Current-image Trivy/registry scanning, signing, target S3 recovery, target
+deployment smoke/load and named environment approvals remain required. Docker Scout was not run
+for this workspace candidate because the available invocation could transmit private package/SBOM
+metadata to an external service; the release workflow's non-exporting Trivy gate remains the
+required scan path.

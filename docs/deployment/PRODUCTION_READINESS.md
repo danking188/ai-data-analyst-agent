@@ -4,6 +4,20 @@ Repository work is considered release-ready only when CI is green and every envi
 item below has a named owner and dated evidence. A code change cannot prove DNS, TLS, backups,
 alerts, legal approval or third-party capacity.
 
+## Current pilot status (2026-09-14)
+
+[DataTrace on Aliyun](https://8.222.221.236.sslip.io/) is live for a small pilot audience with
+self-registration enabled. Readiness and registration configuration were rechecked on 2026-09-14.
+The 2026-09-11 target acceptance covered registration, automatic session, private project creation,
+logout/relogin, an upload-to-report workflow and full-server reboot recovery. Server-side read
+traffic passed 500 requests at concurrency 8 with zero failures and P95 354.913 ms.
+
+This is a single-host SQLite/local-storage pilot with daily local backup and automatic health
+checks, not the external PostgreSQL/S3 deployment assumed by the full sign-off matrix below.
+Its decision is `CONDITIONAL GO`; off-host backup, external alerts, an owned domain and renewal
+arrangements remain outstanding. The matrix remains open for broader production approval.
+See [dated target evidence](../quality/SMALL_TRAFFIC_ACCEPTANCE.md).
+
 ## Implemented in the repository
 
 - Production-only JWT sessions; no development token is embedded in the frontend image.
@@ -32,7 +46,7 @@ alerts, legal approval or third-party capacity.
 | Reliability | Load/soak test with representative maximum files and worker concurrency | QA/SRE | Open |
 | Recovery | Fresh PostgreSQL restore plus object retrieval in isolated environment | DBA/QA | Open |
 | Privacy | Data classification, retention/deletion policy, privacy notice/DPA, residency | Legal/Security | Open |
-| Accounts | Decide bootstrap/invite/SSO model; registration remains disabled by default | Product/Security | Open |
+| Accounts | Self-registration is implemented and opt-in; choose public registration, invite/email verification or SSO for the intended audience | Product/Security | Open |
 | LLM | Offline gate, provider DPA, masked-data policy, named-subject canary and rollback | AI/Security | Open |
 | Release | CI SHA, signed image digests/SBOM/provenance, migration rehearsal, smoke evidence | Release manager | Open |
 
@@ -49,7 +63,10 @@ No-go if any of these is true:
 - legal/privacy approval is missing for the intended data or LLM provider.
 
 After deployment, run the smoke script, upload a non-sensitive representative file, produce and
-download an artifact, inspect logs by request ID, then observe the canary window before widening
-traffic.
+download an artifact, run the 500-request/concurrency-8 read probe, inspect logs by request ID,
+then observe the canary window before widening traffic.
 
 Use [`RELEASE_EVIDENCE.md`](./RELEASE_EVIDENCE.md) as the release-manager evidence template.
+The latest workspace-only preflight is recorded in
+[`../quality/RELEASE_ACCEPTANCE_2026-09-09.md`](../quality/RELEASE_ACCEPTANCE_2026-09-09.md);
+its local recovery and traffic results do not close any target-environment row above.

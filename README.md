@@ -19,6 +19,24 @@ license: apache-2.0
 面向 CSV、Excel 和 Parquet 的证据优先数据分析工作流系统。项目采用
 React + FastAPI 前后端分离架构，以 OpenAPI 作为接口唯一事实源。
 
+## 在线使用与最新进度
+
+网站地址：[DataTrace 在线分析工作台](https://8.222.221.236.sslip.io/)。打开后可注册自己的
+账号；注册成功会自动登录，项目与数据按账号隔离。密码须为 12-128 个字符且不能包含用户名。
+
+截至 **2026-09-14**，阿里云新加坡轻量服务器上的小规模试点已上线，公网就绪检查正常，
+自助注册已开启。最近一次完整验收为 **2026-09-11**：
+
+- 新账号完成注册、自动登录、创建私有项目、退出重登，并在整机重启后保留账号与项目。
+- 新账号完成上传、质量扫描、分析、报告下载，产出 10 个制品和 2 条验证通过的结论。
+- 后端 151 项、前端 28 项测试通过，类型检查与生产构建通过。
+- 服务器侧 500 请求、并发 8：0 失败，P95 354.913 ms；该指标为轻量读取探针，不代表并发分析容量。
+
+当前为单机小规模试点（`CONDITIONAL GO`），使用 SQLite 和本机文件持久化，已配置每日
+本机备份、健康巡检与服务自启动。异机备份、外部告警、自有域名和续费安排仍待补齐；跨境
+访问延迟会受线路影响。LLM 助手与 AI 证据解读当前未开启，核心分析与报告可独立使用。
+详见[项目状态](docs/development/PROJECT_STATUS.md)和[线上验收记录](docs/quality/SMALL_TRAFFIC_ACCEPTANCE.md)。
+
 ## 目录导航
 
 ```text
@@ -107,7 +125,11 @@ ENV_FILE=.env.deploy ./scripts/production_gate.sh
 
 详细步骤见 [部署指南](docs/deployment/DEPLOYMENT.md)；正式标签发布的摘要、SBOM、
 provenance、签名和迁移/Smoke 记录要求见
-[发布证据模板](docs/deployment/RELEASE_EVIDENCE.md)。
+[发布证据模板](docs/deployment/RELEASE_EVIDENCE.md)；可重复的上线小流量、真实工作流与恢复验收见
+[小流量验收说明](docs/quality/SMALL_TRAFFIC_ACCEPTANCE.md)和
+[历史本地候选验收报告（2026-09-09）](docs/quality/RELEASE_ACCEPTANCE_2026-09-09.md)。
+阿里云轻量应用服务器的最低可运行单机方案见
+[阿里云轻量部署说明](docs/deployment/ALIYUN_LIGHTWEIGHT.md)。
 
 面向只能运行一个容器的平台仍可使用根目录 `Dockerfile`，但 API 与 Worker 无法独立
 扩缩容和隔离故障，只建议用于受控试点。正式流量使用 Compose/编排平台的分离拓扑。
@@ -131,15 +153,18 @@ HistGradientBoostingRegressor。数值和类别预处理统一封装在 sklearn 
 模型选择仅使用训练分区交叉验证，随机、分层、时间和 Group 拆分均有独立实现；
 保留集只进行最终一次评估。运行会保存目标驱动 EDA、统计检验及 BH 校正、候选
 模型比较、Dummy 对照、混淆矩阵或残差摘要、置换重要性、限制说明和可下载的
-joblib 模型包。核心计算完全不依赖大语言模型；未来接入 LLM 时只允许根据现有
+joblib 模型包。核心计算完全不依赖大语言模型；已接入的 LLM 只允许根据现有
 Artifact 组织叙述，不能生成或改写指标。
 
-大模型扩展的 Gate L0 和 Gate L1 已经完成：后端提供可替换的 `LLMProvider`、无网络
+大模型扩展的 Gate L0～L4 已全部完成：后端提供可替换的 `LLMProvider`、无网络
 `FakeLLMProvider`、OpenAI-compatible 适配器、严格结构化输出、Prompt 版本注册表和
-安全故障映射。报告页可异步生成只读取已验证 Claim/Artifact 的 AI 证据解读，所有数字和
-引用均经过确定性校验，并可进入 HTML、Notebook 和 Manifest。该能力默认关闭；配置模型后
-设置 `LLM_ENABLED=true` 只开放报告解读，对话式 Assistant 仍等待 Gate L2。实施进度见
-[大模型能力扩展计划](docs/development/LLM_EXTENSION_PLAN.md)。
+安全故障映射。报告页可异步生成只读取已验证 Claim/Artifact 的 AI 证据解读；对话式
+Assistant 支持项目内多轮问答、受约束分析规划、白名单工具、可编辑提案和显式确认后的真实
+分析/清洗执行。所有数字与引用均经过确定性校验，模型调用、工具调用、Token、确认和失败均可
+审计。该能力默认关闭；完成 Provider 配置并设置 `LLM_ENABLED=true` 后，报告解读和 Assistant
+同时按系统能力开放。受控灰度已完成，但更广泛的生产放量仍受环境、合规和发布签署约束。
+实施与验收记录见[大模型能力扩展计划](docs/development/LLM_EXTENSION_PLAN.md)和
+[LLM 生产验收](docs/quality/LLM_PRODUCTION_ACCEPTANCE.md)。
 
 ## 目录维护规则
 
