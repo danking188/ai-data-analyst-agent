@@ -1,11 +1,12 @@
 # 阿里云轻量应用服务器部署
 
 当前网站：[DataTrace](https://8.222.221.236.sslip.io/)。实际实例位于新加坡，已于
-2026-09-11 完成注册联调、上传到报告和整机重启验收；2026-09-14 复查就绪与注册配置正常。
+2026-09-11 完成整机重启恢复；2026-09-15 重新完成注册、上传到报告、真实 Agent、浏览器和
+500 请求小流量验收。
 验收记录见[小流量验收](../quality/SMALL_TRAFFIC_ACCEPTANCE.md)。
 
-以下命令对应已部署的本地运维实现；本次 GitHub 进度同步仅提交文档，新增部署配置与脚本
-尚待独立提交。仅克隆当前文档版本不等于已经获得全部阿里云自动化脚本。
+以下命令对应仓库内的阿里云轻量运维实现。部署配置、巡检、备份和端到端验收脚本必须与
+应用代码使用同一个 Git 版本，避免线上状态与仓库文档分离。
 
 该配置面向单个 DataTrace 项目和小规模访问，目标规格为 **2 核 2GB、Ubuntu 24.04、
 至少 40GB ESSD**。它使用单应用容器、宿主机持久化目录和 Caddy 自动 HTTPS，内存上限
@@ -62,6 +63,32 @@ python3 scripts/configure_aliyun_lite_env.py --enable-registration 你的域名
 已有部署不要重复运行配置生成器：它会覆盖 `.env` 并重新生成 JWT 密钥与初始密码。
 已有用户的数据库密码不会随之更新；调整注册开关时只修改现有配置中的对应变量并重新部署。
 
+### 启用真实 Agent（阿里云百炼）
+
+服务器位于新加坡不代表百炼 API Key 也必须创建在新加坡；关键是 API Key 与 Base URL 必须
+来自同一地域。对于百炼 OpenAI 兼容接口，建议使用项目专用 Key，并将以下配置写入仅 root
+可读的 `.env`：
+
+```dotenv
+LLM_ENABLED=true
+LLM_PROVIDER=openai_compatible
+LLM_API_BASE=https://你的业务空间ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+LLM_API_KEY=你的项目专用密钥
+LLM_MODEL=qwen3.8-flash
+LLM_STRUCTURED_OUTPUT_MODE=prompt
+LLM_ENABLE_THINKING=false
+LLM_MAX_OUTPUT_TOKENS=2048
+LLM_MAX_INPUT_TOKENS=12000
+LLM_DAILY_TOKEN_BUDGET_PER_USER=50000
+LLM_MAX_CONCURRENT_TURNS_PER_PROJECT=1
+```
+
+若 Key 创建在新加坡，应把 Base URL 改为同一新加坡业务空间的
+`https://你的业务空间ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`，不能混用地域。
+`qwen3.8-flash` 用于当前小规模试点，以较低成本完成结构化意图识别、计划与证据叙述；模型
+训练仍由 sklearn 确定性 Worker 执行。公开注册时必须保留单用户 Token 预算、单项目并发限制、
+熔断和审计；需要灰度时设置 `LLM_CANARY_SUBJECTS`。
+
 注册用户名为 3-32 位字母、数字、点、下划线或连字符；密码为 12-128 个字符且不能包含
 用户名。注册成功后会直接建立登录会话。项目、上传文件、分析结果和报告均按账号隔离，
 但该模式仍是公开注册：正式开放前应结合站点用途决定是否增加邮箱验证、邀请码或人工审核。
@@ -86,3 +113,16 @@ LOGIN_PASSWORD='从服务器密钥文件读取' \
 再按 `SMALL_TRAFFIC_ACCEPTANCE.md` 运行 500 请求、并发 8 的验收。开放给用户前，至少
 配置阿里云监控告警、到期自动续费或到期提醒、每日异机备份和季度恢复演练。脚本自动建立的
 本机备份只能处理应用误操作，不能代替 OSS 或另一台主机上的异机备份。
+
+启用 LLM 后还必须执行包含真实模型调用的完整验收：
+
+```bash
+LOGIN_USERNAME=analyst \
+LOGIN_PASSWORD='从服务器密钥文件读取' \
+python3 scripts/production_workflow_smoke.py \
+  --base-url "https://你的域名" \
+  --exercise-llm
+```
+
+该命令使用一次性项目覆盖上传、质量扫描、模型训练、证据与报告导出，并额外验证 AI 证据
+解读、Assistant 只读工具、分析计划、人工确认和确认后的受控执行。成功后默认归档测试项目。

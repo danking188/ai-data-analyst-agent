@@ -53,6 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading={loginMutation.isPending || registerMutation.isPending}
         registrationEnabled={authConfigQuery.data?.registration_enabled === true}
         onLogin={(username, password) => loginMutation.mutate({ username, password })}
+        onModeChange={() => {
+          loginMutation.reset();
+          registerMutation.reset();
+        }}
         onRegister={(username, password) => registerMutation.mutate({ username, password })}
       />
     );

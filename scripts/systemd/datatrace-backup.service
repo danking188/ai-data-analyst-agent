@@ -1,0 +1,10 @@
+[Unit]
+Description=DataTrace daily local backup
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/opt/datatrace/app/deploy/aliyun-lite/.env
+
+[Service]
+Type=oneshot
+ExecStart=/opt/datatrace/app/scripts/backup_aliyun_lite.sh
+Nice=10

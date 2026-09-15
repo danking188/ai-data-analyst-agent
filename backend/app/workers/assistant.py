@@ -213,16 +213,28 @@ class AssistantTurnWorker:
                 dataset_version_id=dataset_version_id,
             )
             self._record_response(budget, plan_response)
+            plan = plan_response.content
+            if not self._plan_is_valid(plan):
+                budget.require_model_capacity()
+                plan_correction_response = self._generate_plan_correction(
+                    question=question,
+                    intent=intent,
+                    dataset_version_id=dataset_version_id,
+                    invalid_plan=plan,
+                )
+                self._record_response(budget, plan_correction_response)
+                plan = plan_correction_response.content
+            self._require_valid_plan(plan)
             arguments = self._prepare_action_arguments(
                 question=question,
                 project_id=project_id,
                 dataset_version_id=dataset_version_id,
-                plan=plan_response.content,
+                plan=plan,
                 budget=budget,
             )
             trace.move(AgentState.EXECUTE, detail="awaiting_user_confirmation")
             self._persist_trace(run_id, trace)
-            self._persist_plan(job_id, run_id, plan_response.content, arguments, budget)
+            self._persist_plan(job_id, run_id, plan, arguments, budget)
             return
 
         trace.move(AgentState.EXECUTE, detail="read_only_tools")
@@ -483,6 +495,42 @@ class AssistantTurnWorker:
             max_output_tokens=self.settings.llm_max_output_tokens,
         )
 
+    def _generate_plan_correction(
+        self,
+        *,
+        question: str,
+        intent: AssistantIntent,
+        dataset_version_id: str | None,
+        invalid_plan: AssistantPlan,
+    ) -> LLMResponse[AssistantPlan]:
+        prompt = get_prompt("assistant.plan_correction", "1.0.0")
+        return self._provider().generate_structured(
+            messages=[
+                LLMMessage(role="system", content=prompt.system),
+                LLMMessage(
+                    role="user",
+                    content=self._bounded_json(
+                        {
+                            "question": question,
+                            "intent": intent.model_dump(mode="json"),
+                            "dataset_version_id": dataset_version_id,
+                            "invalid_plan": invalid_plan.model_dump(mode="json"),
+                            "allowed_tools": sorted(PLANNED_WRITE_TOOLS),
+                            "validation_errors": [
+                                "Every step must use one allowed tool_name.",
+                                "Every step must set requires_confirmation=true.",
+                            ],
+                        }
+                    ),
+                ),
+            ],
+            response_schema=AssistantPlan,
+            model=self.settings.llm_model or "",
+            temperature=0,
+            timeout_seconds=self.settings.llm_timeout_seconds,
+            max_output_tokens=self.settings.llm_max_output_tokens,
+        )
+
     def _generate_answer(
         self,
         *,
@@ -669,7 +717,7 @@ class AssistantTurnWorker:
     def _generate_analysis_spec(
         self, question: str, context: dict[str, Any]
     ) -> LLMResponse[AnalysisSpecDraft]:
-        prompt = get_prompt("assistant.analysis_spec", "1.0.0")
+        prompt = get_prompt("assistant.analysis_spec", "1.1.0")
         return self._provider().generate_structured(
             messages=[
                 LLMMessage(role="system", content=prompt.system),
@@ -683,6 +731,8 @@ class AssistantTurnWorker:
                                 "Use only supplied column names.",
                                 "Classification targets must be discrete; regression targets "
                                 "must be numeric.",
+                                "Never place target in excluded_columns; the modeling executor "
+                                "automatically removes target from feature inputs.",
                                 "Exclude identifiers, sensitive fields, post-outcome fields, "
                                 "and target proxies.",
                                 "Use task-compatible metrics and an appropriate split strategy.",
@@ -827,15 +877,7 @@ class AssistantTurnWorker:
         arguments: dict[int, dict[str, Any]],
         budget: AssistantBudget,
     ) -> None:
-        if any(
-            step.tool_name not in PLANNED_WRITE_TOOLS or not step.requires_confirmation
-            for step in plan.steps
-        ):
-            raise DomainError(
-                "LLM_INVALID_PLAN",
-                "模型生成的计划包含未允许或未确认的操作",
-                409,
-            )
+        self._require_valid_plan(plan)
         session = self.database.session()
         try:
             with UnitOfWork(session) as uow:
@@ -876,6 +918,22 @@ class AssistantTurnWorker:
                 )
         finally:
             session.close()
+
+    @staticmethod
+    def _plan_is_valid(plan: AssistantPlan) -> bool:
+        return all(
+            step.tool_name in PLANNED_WRITE_TOOLS and step.requires_confirmation
+            for step in plan.steps
+        )
+
+    @classmethod
+    def _require_valid_plan(cls, plan: AssistantPlan) -> None:
+        if not cls._plan_is_valid(plan):
+            raise DomainError(
+                "LLM_INVALID_PLAN",
+                "模型生成的计划包含未允许或未确认的操作",
+                409,
+            )
 
     def _run_child_job(self, kind: str, job_id: str) -> None:
         storage = get_file_storage()

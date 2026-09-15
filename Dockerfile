@@ -23,7 +23,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     APP_ENV=production \
     API_PREFIX=/api/v1 \
-    AUTH_MODE=jwt \
     JOB_EXECUTION_MODE=worker \
     DATA_ROOT=/mnt/workspace/data \
     DATABASE_URL=sqlite:////mnt/workspace/data/app.db \

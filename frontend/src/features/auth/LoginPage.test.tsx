@@ -10,6 +10,7 @@ function renderPage(overrides: Partial<ComponentProps<typeof LoginPage>> = {}) {
     loading: false,
     registrationEnabled: true,
     onLogin: vi.fn(),
+    onModeChange: vi.fn(),
     onRegister: vi.fn(),
     ...overrides,
   };
@@ -45,6 +46,31 @@ describe("LoginPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
     expect(props.onRegister).toHaveBeenCalledWith("new-user", "safe-password-2026");
+  });
+
+  it("shows and enforces the registration rules before calling the API", () => {
+    const props = renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    expect(screen.getByText(/3-32 位/)).toBeInTheDocument();
+    expect(screen.getByText(/至少 12 个字符/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "new-user" } });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "new-user-password-2026" },
+    });
+    fireEvent.change(screen.getByLabelText("确认密码"), {
+      target: { value: "new-user-password-2026" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "创建账号" }).closest("form")!);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("密码不能包含用户名");
+    expect(props.onRegister).not.toHaveBeenCalled();
+  });
+
+  it("clears stale API errors when switching account modes", () => {
+    const props = renderPage({ loginError: new Error("登录失败") });
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    expect(props.onModeChange).toHaveBeenCalledOnce();
   });
 
   it("hides self-service registration when the deployment disables it", () => {

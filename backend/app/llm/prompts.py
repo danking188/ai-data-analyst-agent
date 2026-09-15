@@ -35,7 +35,15 @@ PROMPTS = {
         name="assistant.plan",
         version="1.0.0",
         system=EVIDENCE_BOUNDARY
-        + "\nBuild the smallest valid plan using only tools listed by the application.",
+        + "\nBuild the smallest valid plan using only tools listed by the application. "
+        "Every emitted step must name one allowed tool and set requires_confirmation=true.",
+    ),
+    ("assistant.plan_correction", "1.0.0"): PromptTemplate(
+        name="assistant.plan_correction",
+        version="1.0.0",
+        system=EVIDENCE_BOUNDARY
+        + "\nCorrect the rejected plan exactly once. Every step must use one supplied allowed "
+        "tool and set requires_confirmation=true. Remove unsupported or explanatory steps.",
     ),
     ("assistant.answer", "1.0.0"): PromptTemplate(
         name="assistant.answer",
@@ -49,12 +57,13 @@ PROMPTS = {
         + "\nCorrect the supplied draft once. Remove unsupported findings and use only supplied "
         "citation identifiers. Never request or repeat a tool call.",
     ),
-    ("assistant.analysis_spec", "1.0.0"): PromptTemplate(
+    ("assistant.analysis_spec", "1.1.0"): PromptTemplate(
         name="assistant.analysis_spec",
-        version="1.0.0",
+        version="1.1.0",
         system=EVIDENCE_BOUNDARY
         + "\nDraft an AnalysisSpec using only supplied columns and compatible metrics. "
-        "Explicitly identify temporal or target leakage risks.",
+        "Explicitly identify temporal or target leakage risks. Never place the target in "
+        "excluded_columns because the execution layer removes it from feature inputs.",
     ),
     ("assistant.cleaning_plan", "1.0.0"): PromptTemplate(
         name="assistant.cleaning_plan",
@@ -69,11 +78,21 @@ PROMPTS = {
         system=EVIDENCE_BOUNDARY
         + "\nSuggest target-independent feature transformations only. Never emit executable code.",
     ),
-    ("assistant.report_narrative", "1.0.0"): PromptTemplate(
+    ("assistant.report_narrative", "1.1.0"): PromptTemplate(
         name="assistant.report_narrative",
+        version="1.1.0",
+        system=EVIDENCE_BOUNDARY
+        + "\nWrite a concise business narrative grounded only in supplied evidence. "
+        "Copy every numeric token exactly as written in a cited source, including its sign and "
+        "percent suffix; never convert a negative difference into an unsigned decrease.",
+    ),
+    ("assistant.report_narrative_correction", "1.0.0"): PromptTemplate(
+        name="assistant.report_narrative_correction",
         version="1.0.0",
         system=EVIDENCE_BOUNDARY
-        + "\nWrite a concise business narrative grounded only in supplied evidence.",
+        + "\nCorrect the rejected evidence narrative exactly once. Use only supplied citation "
+        "identifiers. Remove an unsupported statement rather than estimating or re-expressing "
+        "a number. Copy numeric tokens verbatim, including signs and percent suffixes.",
     ),
 }
 

@@ -4,18 +4,15 @@ This runbook defines the minimum repeatable evidence for opening DataTrace to a 
 audience. It supplements, but does not replace, the infrastructure and compliance sign-off in
 `docs/deployment/PRODUCTION_READINESS.md`.
 
-## Latest availability check (2026-09-14)
+## Latest target acceptance (2026-09-15)
 
 Public website: [DataTrace](https://8.222.221.236.sslip.io/).
 The public readiness endpoint returned `ready`, database `ok` (SQLite), object storage `ok`
-(local), and the auth configuration returned `registration_enabled=true`. This was a read-only
-availability check; the dated workflow/load/reboot results below were collected on 2026-09-11.
-The latest full local regression passed 151 backend and 28 frontend tests, TypeScript and the
-production frontend build. Browser automation timed out during that release, so component tests,
-public API checks and deployed JavaScript inspection do not constitute a completed GUI end-to-end test.
-
-This GitHub update synchronizes documentation only. The Aliyun deployment and smoke scripts
-referenced below remain local implementation changes pending a separate source commit.
+(local), and registration remained enabled. A registered user completed session, isolation,
+logout/relogin and the upload-to-report workflow. A real Qwen Agent completed cited read tools,
+plan/confirmation and controlled model execution. Playwright passed desktop and 390px mobile flows
+with no page error or HTTP 5xx. The full local regression passed 154 backend and 33 frontend tests,
+83% backend coverage, type checks, OpenAPI validation and the production frontend build.
 
 ## Acceptance profile
 
@@ -43,17 +40,18 @@ token with `--platform-token-env`; the token value is never printed.
 
 | Check | Acceptance criterion | Current evidence |
 | --- | --- | --- |
-| Functional regression | Backend/frontend/contract gates pass | Local workspace passed; Aliyun deployment uses source SHA `82eb7f8` plus the documented local release delta |
+| Functional regression | Backend/frontend/contract gates pass | 154 backend and 33 frontend tests, 83% coverage, type checks, OpenAPI and production build passed |
 | Production image | Non-root image starts and readiness passes | Aliyun single-container image passed startup, readiness and reboot recovery |
-| Authenticated smoke | Registration, login, session, capabilities and frontend proxy pass | Passed on the public Aliyun HTTPS origin on 2026-09-11, including logout/relogin and full-server reboot |
+| Authenticated smoke | Registration, login, session, capabilities and frontend proxy pass | Rerun on the public Aliyun HTTPS origin on 2026-09-15; reboot recovery remains verified from 2026-09-11 |
 | Account isolation | One account cannot list another account's project | Registered account project stayed hidden from the bootstrap administrator before and after reboot |
-| Small read traffic | 500 requests, concurrency 8, error rate ≤1%, P95 ≤2s | Post-registration server-side run passed with 0 failures, 35.093 RPS and 354.913 ms P95 |
-| Representative workflow | Upload, quality scan, analysis, evidence and download pass | Registered account passed on Aliyun: 10 artifacts, 2 validated claims and a 4,159-byte report |
+| Small read traffic | 500 requests, concurrency 8, error rate ≤1%, P95 ≤2s | 0 failures, 50.612 RPS and 228.934 ms P95 |
+| Representative workflow | Upload, quality scan, analysis, evidence and download pass | Registered account passed: 10 artifacts, 2 validated claims and a 4,159-byte report; real Agent plan/confirm/execute also passed |
+| Browser workflow | Desktop/mobile registration and primary Agent interaction pass | Playwright passed registration, project creation, upload, Agent read turn and 390px navigation; 0 page errors, 0 HTTP 5xx |
 | Recovery | A current local backup exists and services recover after reboot | SQLite online backup and file archive passed; off-server recovery remains pending |
 | Observability | One-minute readiness probe and restart after 3 consecutive failures | Active systemd timer; external alert receiver remains pending |
 | Security edge | TLS, backend isolation and security headers verified | Passed with Let's Encrypt TLS, Caddy-only public ports, UFW, Fail2ban and key-only SSH |
 
-## Aliyun lightweight production result (updated 2026-09-11)
+## Aliyun lightweight production result (updated 2026-09-15)
 
 The small-traffic deployment is live at [DataTrace](https://8.222.221.236.sslip.io/) on the Singapore
 lightweight instance `Ubuntu-qpqv` (Ubuntu 24.04, 2 vCPU, 2 GB plan, 40 GB disk). This is a
@@ -65,10 +63,12 @@ and SQLite.
 | Public readiness | Database `ok` (SQLite) and object storage `ok` (local) |
 | Authenticated smoke | Login, session, capabilities, frontend, proxy and required security headers passed |
 | Registration integration | Public registration, automatic session, private project creation, logout/relogin and post-reboot login all passed |
-| Server-side read traffic | Post-registration: 500 requests at concurrency 8; 0 failures; 35.093 requests/s |
-| Server-side latency | Mean 226.713 ms; P50 178.650 ms; P95 354.913 ms; P99 1,912.240 ms; max 1,939.083 ms |
+| Server-side read traffic | 500 requests at concurrency 8; 0 failures; 50.612 requests/s |
+| Server-side latency | Mean 156.918 ms; P50 151.883 ms; P95 228.934 ms; P99 267.711 ms; max 285.897 ms |
 | Cross-border observation | Post-registration: 500 direct requests from the deployment workstation had 0 failures and 6.047 requests/s; P95 was 3,299.814 ms and failed the 2-second end-to-end threshold. The faster server-side probe suggests network overhead but does not establish the sole cause |
-| Representative workflow | Registered account: ingestion 1.955 s; quality 2.146 s; analysis 5.017 s; report 0.349 s; test project archived |
+| Representative workflow | Registered account: ingestion 0.552 s; quality 1.079 s; analysis 2.758 s; report 1.082 s; test project archived |
+| Real Agent workflow | 3/3 turns and 5/5 tools succeeded; cited read tools, confirmation boundary and confirmed model run passed; Agent P95 9.907 s in the API workflow |
+| Browser workflow | Desktop and 390px registration/project/upload/Agent flow passed; UI metrics refreshed to 100% success, 5,242 Token and 21.5 s P95 for that isolated browser project |
 | Resource observation | Application about 610 MiB and Caddy about 12 MiB after tests; 2 GB swap configured and unused; 29 GB disk free |
 | Recovery | Full server reboot completed after registration; both containers returned automatically and the new account/project remained available |
 | Backup | Validated SQLite snapshot, non-database file archive and SHA-256 manifest; daily timer with 14-day local retention |
@@ -77,8 +77,9 @@ and SQLite.
 
 The remaining conditions are operational rather than application blockers: enable renewal before
 the current subscription expires, add an external alert receiver, copy daily backups off the
-server, and replace the temporary `sslip.io` hostname with an owned domain for long-term use. LLM
-features remain intentionally disabled until a provider key and model are configured.
+server, and replace the temporary `sslip.io` hostname with an owned domain for long-term use. The
+Agent uses Alibaba Cloud Model Studio's OpenAI-compatible endpoint with `qwen3.8-flash`; provider
+quota, spend and latency must be monitored before widening traffic.
 
 ## Local candidate result (2026-09-08)
 

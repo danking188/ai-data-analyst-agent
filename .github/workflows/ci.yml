@@ -65,6 +65,8 @@ jobs:
           ruby-version: "3.3"
       - run: bash scripts/check_repository_hygiene.sh
       - run: bash -n scripts/*.sh
+      - run: python3 scripts/small_traffic_test.py --self-test
+      - run: python3 scripts/production_workflow_smoke.py --self-test
       - run: ruby scripts/validate_openapi.rb docs/api/openapi.yaml
       - run: docker compose --env-file .env.deploy.example config --quiet
       - run: docker compose --env-file .env.deploy.example build

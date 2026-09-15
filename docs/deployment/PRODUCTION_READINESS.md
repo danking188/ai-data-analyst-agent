@@ -4,13 +4,14 @@ Repository work is considered release-ready only when CI is green and every envi
 item below has a named owner and dated evidence. A code change cannot prove DNS, TLS, backups,
 alerts, legal approval or third-party capacity.
 
-## Current pilot status (2026-09-14)
+## Current pilot status (2026-09-15)
 
 [DataTrace on Aliyun](https://8.222.221.236.sslip.io/) is live for a small pilot audience with
-self-registration enabled. Readiness and registration configuration were rechecked on 2026-09-14.
-The 2026-09-11 target acceptance covered registration, automatic session, private project creation,
-logout/relogin, an upload-to-report workflow and full-server reboot recovery. Server-side read
-traffic passed 500 requests at concurrency 8 with zero failures and P95 354.913 ms.
+self-registration and a Qwen-backed Agent enabled. The 2026-09-15 target acceptance covered
+registration, automatic session, private project creation, logout/relogin, upload-to-report,
+real Agent plan/confirm/execute, and desktop/mobile browser flows. Server-side read traffic passed
+500 requests at concurrency 8 with zero failures, P95 228.934 ms and 50.612 requests/s. Full-server
+reboot recovery was previously verified on 2026-09-11.
 
 This is a single-host SQLite/local-storage pilot with daily local backup and automatic health
 checks, not the external PostgreSQL/S3 deployment assumed by the full sign-off matrix below.

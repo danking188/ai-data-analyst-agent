@@ -144,6 +144,61 @@ def test_narrative_generation_validates_fake_provider_output() -> None:
     assert "claim_accuracy" in provider.calls[0].messages[1].content
 
 
+def test_narrative_corrects_a_rejected_first_draft_once() -> None:
+    invalid = valid_answer().model_copy(
+        update={
+            "summary": "准确率达到 0.9。",
+            "findings": [
+                valid_answer().findings[0].model_copy(
+                    update={"text": "保留集准确率为 0.9。"}
+                )
+            ],
+        }
+    )
+    provider = FakeLLMProvider(
+        [invalid.model_dump(mode="json"), valid_answer().model_dump(mode="json")]
+    )
+
+    response = generate_evidence_narrative(
+        provider=provider,
+        context=evidence_context(),
+        model="fake-analysis",
+        temperature=0.1,
+        timeout_seconds=30,
+        max_output_tokens=1000,
+    )
+
+    assert response.content == valid_answer()
+    assert len(provider.calls) == 2
+    assert provider.calls[1].schema_name == "AssistantAnswer"
+    assert "unsupported numbers" in provider.calls[1].messages[1].content
+
+
+def test_narrative_rejects_an_invalid_correction() -> None:
+    invalid = valid_answer().model_copy(
+        update={
+            "findings": [
+                valid_answer().findings[0].model_copy(
+                    update={"text": "保留集准确率为 0.9。"}
+                )
+            ]
+        }
+    )
+    provider = FakeLLMProvider([invalid.model_dump(mode="json")] * 2)
+
+    with pytest.raises(CitationValidationError, match="unsupported numbers"):
+        generate_evidence_narrative(
+            provider=provider,
+            context=evidence_context(),
+            model="fake-analysis",
+            temperature=0.1,
+            timeout_seconds=30,
+            max_output_tokens=1000,
+        )
+
+    assert len(provider.calls) == 2
+
+
 def test_evidence_narrative_eval_baseline_has_required_coverage() -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "llm_eval" / "evidence_narrative_cases.json"
     cases = json.loads(fixture.read_text(encoding="utf-8"))

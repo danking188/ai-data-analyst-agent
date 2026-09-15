@@ -175,6 +175,70 @@ def test_assistant_worker_stops_new_computation_at_confirmation(monkeypatch, app
         session.close()
 
 
+def test_assistant_worker_corrects_invalid_confirmation_plan(monkeypatch, app_client) -> None:
+    project_id, message_id, job_id = _queued_turn(
+        monkeypatch, app_client, "为这个项目训练一个分类模型"
+    )
+    invalid_plan = {
+        "objective": "草拟分类分析",
+        "dataset_version_id": None,
+        "steps": [
+            {
+                "position": 1,
+                "title": "草拟分析规格",
+                "tool_name": "analysis.draft_spec",
+                "purpose": "明确目标列、切分和指标",
+                "requires_confirmation": False,
+            }
+        ],
+        "estimated_model_calls": 2,
+        "estimated_tool_calls": 1,
+        "limitations": [],
+    }
+    corrected_plan = {
+        **invalid_plan,
+        "steps": [
+            {
+                **invalid_plan["steps"][0],
+                "requires_confirmation": True,
+            }
+        ],
+    }
+    provider = FakeLLMProvider(
+        [
+            {
+                "intent": "plan_analysis",
+                "rationale": "A new analysis run is required",
+                "requires_new_computation": True,
+            },
+            invalid_plan,
+            corrected_plan,
+        ]
+    )
+    worker = AssistantTurnWorker(
+        get_database(),
+        worker_id="test-assistant-plan-correction",
+        provider=provider,
+        settings=get_settings(),
+    )
+
+    assert worker.run(job_id) is True
+
+    session = get_database().session()
+    try:
+        repository = AssistantRepository(session)
+        message = repository.get_message(project_id=project_id, message_id=message_id)
+        run = repository.latest_llm_run_for_message(message_id)
+        assert message.status == "awaiting_confirmation"
+        assert run is not None and run.model_call_count == 3
+        calls = repository.list_tool_calls(run.llm_run_id)
+        assert len(calls) == 1
+        assert calls[0].tool_name == "analysis.draft_spec"
+        assert calls[0].requires_confirmation is True
+    finally:
+        session.close()
+
+
 def test_assistant_worker_corrects_unsupported_answer_without_repeating_tools(
     monkeypatch, app_client
 ) -> None:

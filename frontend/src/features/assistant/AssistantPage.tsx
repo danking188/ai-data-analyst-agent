@@ -89,6 +89,22 @@ export function AssistantPage() {
     [messages],
   );
 
+  useEffect(() => {
+    if (
+      !project ||
+      !messages.some((message) => message.role === "assistant") ||
+      messages.some(
+        (message) =>
+          message.role === "assistant" && ["queued", "processing"].includes(message.status),
+      )
+    ) {
+      return;
+    }
+    void queryClient.invalidateQueries({
+      queryKey: ["assistant", project.project_id, "metrics", 7],
+    });
+  }, [messagesQuery.data, project, queryClient]);
+
   const createConversation = useMutation({
     mutationFn: () =>
       apiClient.createAssistantConversation(project!.project_id, {

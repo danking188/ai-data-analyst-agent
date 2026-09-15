@@ -11,6 +11,8 @@ fi
 cd "$repo_root"
 ruby scripts/validate_openapi.rb docs/api/openapi.yaml
 docker compose --env-file "$env_file" config --quiet
+python3 scripts/small_traffic_test.py --self-test
+python3 scripts/production_workflow_smoke.py --self-test
 
 cd backend
 uv sync --frozen --extra dev

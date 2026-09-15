@@ -1,0 +1,70 @@
+name: datatrace-aliyun-lite
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: datatrace:${IMAGE_TAG:-local}
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    restart: unless-stopped
+    init: true
+    expose:
+      - "7860"
+    volumes:
+      - ${DATATRACE_DATA_DIR:-/opt/datatrace/data}:/mnt/workspace/data
+      - ${DATATRACE_BACKUP_DIR:-/opt/datatrace/backups}:/mnt/workspace/backups
+    mem_limit: ${APP_MEMORY_LIMIT:-1400m}
+    cpus: ${APP_CPU_LIMIT:-1.5}
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=384m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/api/v1/health/ready', timeout=5).read()
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 160m
+    cpus: 0.25
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

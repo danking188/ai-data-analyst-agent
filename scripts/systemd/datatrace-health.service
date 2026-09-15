@@ -1,0 +1,9 @@
+[Unit]
+Description=Check DataTrace readiness and restart after repeated failures
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/opt/datatrace/app/deploy/aliyun-lite/.env
+
+[Service]
+Type=oneshot
+ExecStart=/opt/datatrace/app/scripts/healthcheck_aliyun_lite.sh

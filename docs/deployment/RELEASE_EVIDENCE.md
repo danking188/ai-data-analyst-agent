@@ -4,26 +4,26 @@ This file defines the evidence that must be attached to every production release
 results are useful preflight evidence, but they do not replace immutable registry digests or the
 environment sign-off in `PRODUCTION_READINESS.md`.
 
-## Aliyun registration release and documentation sync
+## Aliyun Agent release and source sync (2026-09-15)
 
 Public website: [DataTrace](https://8.222.221.236.sslip.io/).
-The 2026-09-11 release enabled public self-registration and added visible registration rules and
-authentication error reset on mode changes. A new account completed automatic login, private
-project creation, logout/relogin, upload, quality scan, analysis and HTML report download.
-The workflow produced 10 artifacts and 2 validated claims. A full server reboot retained the
-account and project, and the bootstrap administrator could not list that project.
+Public self-registration and account isolation remain enabled. A new account completed automatic
+login, private-project isolation, logout/relogin, upload, quality scan, real model training and HTML
+report download. The workflow produced 10 artifacts and 2 validated claims.
 
-Local checks passed 151 backend and 28 frontend tests, TypeScript and the production build.
-The server-side 500-request/concurrency-8 read probe had zero failures, 35.093 RPS and P95
-354.913 ms. The workstation probe also had zero failures but P95 3,299.814 ms exceeded the
-2-second end-to-end threshold. Browser automation was unavailable; the release has component,
-static-bundle and API evidence, not completed GUI end-to-end evidence.
+The Alibaba Cloud Model Studio OpenAI-compatible provider is enabled with `qwen3.8-flash`. The live
+Agent acceptance completed an AI evidence narrative, a cited read-only turn and a new-analysis turn
+that stopped before confirmation, then ran its approved AnalysisSpec and model job. All 3 Agent turns
+and all 5 tool calls succeeded. Defensive correction now covers evidence-number formatting, invalid
+plans and the model placing its target in `excluded_columns` without weakening deterministic validators.
 
-On 2026-09-14, public readiness again returned `ready` with database/storage `ok`, and auth config
-confirmed registration was enabled. This update synchronizes documentation only; the deployed
-application remains base commit `82eb7f8` plus local source/deployment changes not yet published
-as a complete immutable release. Do not treat the documentation commit as the deployed source SHA
-or as evidence of fresh CI, image scanning or signing. Detailed results and remaining operational
+Local checks passed 154 backend and 33 frontend tests, 83% backend coverage, Ruff, strict Mypy,
+TypeScript, OpenAPI and the production build. The server-side 500-request/concurrency-8 read probe
+had zero failures, 50.612 RPS and P95 228.934 ms. Playwright passed desktop and 390px registration,
+project creation, upload, real Agent read turn and responsive navigation with no page error or HTTP 5xx.
+The deployed source, Aliyun scripts and documentation are synchronized in the current GitHub update;
+the commit containing this file is the source reference. This does not replace a signed image digest,
+fresh remote CI/security result or the broader environment sign-off. Detailed evidence and operational
 conditions are in [small-traffic acceptance](../quality/SMALL_TRAFFIC_ACCEPTANCE.md).
 
 ## Automated release artifacts

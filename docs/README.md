@@ -2,9 +2,10 @@
 
 本目录是项目开发、契约与发布状态的共享事实源。
 
-在线网站：[DataTrace](https://8.222.221.236.sslip.io/)。截至 2026-09-14，阿里云小规模
-试点已上线且自助注册开启；最新进度见[项目状态](development/PROJECT_STATUS.md)，
-注册联调、完整分析流程和重启恢复证据见[线上验收](quality/SMALL_TRAFFIC_ACCEPTANCE.md)。
+在线网站：[DataTrace](https://8.222.221.236.sslip.io/)。截至 2026-09-15，阿里云小规模
+版本已上线，自助注册与真实 Qwen Agent 均已开启；最新进度见
+[项目状态](development/PROJECT_STATUS.md)，完整流程、浏览器和流量证据见
+[线上验收](quality/SMALL_TRAFFIC_ACCEPTANCE.md)。
 
 ## 唯一事实源
 

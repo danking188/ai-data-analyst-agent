@@ -159,7 +159,7 @@ def test_confirmed_analysis_plan_runs_real_modeling(
                 "group_column": None,
                 "metrics": ["accuracy", "f1", "roc_auc"],
                 "included_columns": ["feature", "segment"],
-                "excluded_columns": [],
+                "excluded_columns": ["target"],
                 "random_seed": 42,
                 "rationale": "目标为二元类别，使用分层拆分",
                 "leakage_warnings": [],
@@ -197,6 +197,11 @@ def test_confirmed_analysis_plan_runs_real_modeling(
         )  # type: ignore[union-attr]
         assert message.status == "awaiting_confirmation"
         assert calls[0].arguments_json["target"] == "target"
+        assert calls[0].arguments_json["excluded_columns"] == []
+        assert any(
+            "目标字段已从 excluded_columns 中移除" in warning
+            for warning in calls[0].arguments_json["validation_warnings"]
+        )
         assert calls[0].arguments_json["metrics"] == ["accuracy", "f1", "roc_auc"]
         assert (
             session.scalar(select(AnalysisSpecRow).where(AnalysisSpecRow.project_id == project_id))

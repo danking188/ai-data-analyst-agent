@@ -69,11 +69,28 @@ class AssistantActionRegistry:
         version_id = self._require_version(dataset_version_id)
         if tool_name == "analysis.draft_spec":
             analysis_draft = AnalysisSpecDraft.model_validate(arguments)
+            normalization_warnings: list[str] = []
+            if (
+                analysis_draft.target is not None
+                and analysis_draft.target in analysis_draft.excluded_columns
+            ):
+                analysis_draft = analysis_draft.model_copy(
+                    update={
+                        "excluded_columns": [
+                            column
+                            for column in analysis_draft.excluded_columns
+                            if column != analysis_draft.target
+                        ]
+                    }
+                )
+                normalization_warnings.append(
+                    "目标字段已从 excluded_columns 中移除；目标字段仅会从模型特征中自动排除"
+                )
             analysis_payload = self.analysis_spec_payload(analysis_draft, version_id)
             warnings = AnalysisSpecService(self.session).validate(project_id, analysis_payload)
             return {
                 **analysis_draft.model_dump(mode="json"),
-                "validation_warnings": warnings,
+                "validation_warnings": [*normalization_warnings, *warnings],
             }
         if tool_name == "analysis.run":
             return AnalysisRunArguments.model_validate(arguments).model_dump(mode="json")

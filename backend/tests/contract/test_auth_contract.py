@@ -184,6 +184,22 @@ def test_jwt_login_cookie_session_and_logout(
         assert projects.status_code == 200
         assert projects.json()["total"] == 0
 
+        registered_csrf = client.cookies.get("datatrace_csrf")
+        registered_project = client.post(
+            "/api/v1/projects",
+            headers={
+                "Idempotency-Key": "registered-account-project",
+                "X-CSRF-Token": registered_csrf,
+            },
+            json={
+                "name": "注册账号项目",
+                "timezone": "Asia/Shanghai",
+                "language": "zh-CN",
+            },
+        )
+        assert registered_project.status_code == 201
+        assert client.get("/api/v1/projects").json()["total"] == 1
+
         duplicate = client.post(
             "/api/v1/auth/register",
             json={"username": "new.user", "password": "another-password-2026"},
@@ -215,6 +231,20 @@ def test_jwt_login_cookie_session_and_logout(
         )
         assert persisted_login.status_code == 200
         assert persisted_login.json()["subject_id"] == "new.user"
+        assert restarted_client.get("/api/v1/projects").json()["total"] == 1
+
+        restarted_client.post(
+            "/api/v1/auth/logout",
+            headers={"X-CSRF-Token": restarted_client.cookies.get("datatrace_csrf")},
+        )
+        analyst_login = restarted_client.post(
+            "/api/v1/auth/login",
+            json={"username": "analyst", "password": "test-password"},
+        )
+        assert analyst_login.status_code == 200
+        analyst_projects = restarted_client.get("/api/v1/projects")
+        assert analyst_projects.status_code == 200
+        assert analyst_projects.json()["total"] == 1
 
         for _ in range(5):
             failed = restarted_client.post(
