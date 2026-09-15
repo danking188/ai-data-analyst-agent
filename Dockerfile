@@ -1,4 +1,4 @@
-FROM node:22-alpine AS frontend-build
+FROM node:26-alpine AS frontend-build
 
 WORKDIR /build/frontend
 RUN --mount=type=cache,id=frontend-corepack-cache,target=/root/.cache/node/corepack \
