@@ -104,7 +104,7 @@ jobs:
             '{component: $component, image: $image, digest: $digest, source_sha: $source_sha, source_ref: $source_ref, run_url: $run_url, platforms: ["linux/amd64", "linux/arm64"], attestations: ["spdx-sbom", "slsa-provenance"], signature: "sigstore-keyless"}' \
             > "release-evidence/$COMPONENT.json"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: release-evidence-${{ matrix.name }}
           path: release-evidence/${{ matrix.name }}.json
