@@ -40,8 +40,9 @@ PROMPTS = {
         "never schema inspection. Route raw columns, row counts, schema, and data-quality state "
         "to inspect_data. Use a planning intent only for an explicit new run, training request, "
         "recalculation, cleaning action, or report export. Refuse requests for secrets, arbitrary "
-        "commands or SQL, cross-project data, fabricated evidence, causal overclaiming, or "
-        "bypassing confirmation.",
+        "commands or SQL, cross-project data, fabricated evidence, or bypassing confirmation. "
+        "For causal-overclaim requests about existing analyses, retrieve evidence and answer "
+        "while explicitly stating that association does not establish causation.",
     ),
     ("assistant.plan", "1.0.0"): PromptTemplate(
         name="assistant.plan",

@@ -18,7 +18,7 @@ for module_root in (BACKEND, ROOT / "scripts"):
     if str(module_root) not in sys.path:
         sys.path.insert(0, str(module_root))
 
-from production_workflow_smoke import (  # noqa: E402
+from production_workflow_smoke import (  # type: ignore[import-not-found]  # noqa: E402
     TERMINAL_JOB_STATES,
     ApiClient,
     message_by_id,
@@ -29,6 +29,7 @@ from app.core.config import get_settings  # noqa: E402
 from app.llm.evaluation import (  # noqa: E402
     AgentEvalCase,
     AgentEvalObservation,
+    AgentEvalResult,
     AgentJudgeVerdict,
     build_judge_payload,
     evaluate_agent_observation,
@@ -233,7 +234,7 @@ def execute_live_case(
     run_key: str,
     position: int,
     use_judge: bool,
-):
+) -> AgentEvalResult:
     conversation = client.request(
         "POST",
         f"/projects/{project_id}/assistant/conversations",
@@ -280,7 +281,7 @@ def execute_live_case(
         job_status=str(job.get("status", "failed")),
         answer=message.get("answer"),
         plan=message.get("plan"),
-        tool_calls=message.get("tool_calls", []),
+        tool_calls=_compact_tool_calls(message.get("tool_calls", [])),
         elapsed_ms=elapsed_ms,
         error=error,
     )
@@ -308,6 +309,35 @@ def execute_live_case(
         payload={"status": "archived"},
     )
     return result
+
+
+def _compact_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep gate-relevant metadata without persisting bulky tool results."""
+    compacted: list[dict[str, Any]] = []
+    for call in calls:
+        item = {
+            key: call[key]
+            for key in (
+                "tool_call_id",
+                "tool_name",
+                "status",
+                "requires_confirmation",
+                "arguments",
+                "error",
+            )
+            if key in call
+        }
+        result = call.get("result")
+        if isinstance(result, dict):
+            resource = {
+                key: result[key]
+                for key in ("resource_type", "resource_id", "status")
+                if key in result
+            }
+            if resource:
+                item["result_resource"] = resource
+        compacted.append(item)
+    return compacted
 
 
 def judge_observation(

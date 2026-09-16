@@ -7,7 +7,19 @@ from app.api.schemas import CleaningOperation
 from app.domain.errors import validation_error
 
 CAST_TYPES = {"integer", "float", "string", "boolean", "datetime"}
-FILTER_OPERATORS = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "is_null", "not_null"}
+FILTER_OPERATORS = {
+    "eq",
+    "ne",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "in",
+    "not_in",
+    "between",
+    "is_null",
+    "not_null",
+}
 IMPUTE_METHODS = {"mean", "median", "mode", "constant"}
 
 
@@ -129,6 +141,10 @@ def _validate_operation(operation: CleaningOperation, *, columns: set[str]) -> N
             raise validation_error("当前筛选操作符的 value 参数不正确")
         if operator in {"in", "not_in"} and not isinstance(parameters.get("value"), list):
             raise validation_error("in/not_in 的 value 必须为数组")
+        if operator == "between" and (
+            not isinstance(parameters.get("value"), list) or len(parameters["value"]) != 2
+        ):
+            raise validation_error("between 的 value 必须为两个边界值的数组")
         return
 
     if operation.operation == "add_missing_indicator":

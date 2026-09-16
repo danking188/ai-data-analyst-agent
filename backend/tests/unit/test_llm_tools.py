@@ -4,12 +4,91 @@ import pytest
 
 from app.domain.errors import DomainError
 from app.llm.citations import validate_answer_sources
+from app.llm.schemas import AssistantAnswer, AssistantIntent, AssistantPlan, AssistantPlanStep
 from app.llm.tools import AssistantToolContext, AssistantToolRegistry, AssistantToolResult
 from app.persistence.repositories.datasets import DatasetVersionDraft
 from app.persistence.repositories.projects import ProjectRepository
 from app.persistence.session import get_database
 from app.persistence.unit_of_work import UnitOfWork
 from app.workers.assistant import AssistantTurnWorker
+
+
+def _plan(*tool_names: str) -> AssistantPlan:
+    return AssistantPlan(
+        objective="Prepare a controlled action.",
+        dataset_version_id="dsv_1",
+        steps=[
+            AssistantPlanStep(
+                position=index,
+                title=tool_name,
+                tool_name=tool_name,
+                purpose=tool_name,
+                requires_confirmation=True,
+            )
+            for index, tool_name in enumerate(tool_names, start=1)
+        ],
+        estimated_model_calls=2,
+        estimated_tool_calls=len(tool_names),
+        limitations=[],
+    )
+
+
+def test_agent_normalizes_high_risk_edge_intents_and_minimal_plans() -> None:
+    unsafe_refusal = AssistantIntent(
+        intent="refuse", rationale="causal wording", requires_new_computation=False
+    )
+    causal = AssistantTurnWorker._normalize_intent(
+        "把相关性写成导致结果的原因。", unsafe_refusal
+    )
+    missing_target = AssistantTurnWorker._normalize_intent(
+        "在没有目标列时训练模型。",
+        AssistantIntent(
+            intent="plan_analysis", rationale="train", requires_new_computation=True
+        ),
+    )
+    quality = AssistantTurnWorker._normalize_intent(
+        "异常值被如何处理？",
+        AssistantIntent(
+            intent="explain_model", rationale="model preprocessing", requires_new_computation=False
+        ),
+    )
+    extrapolation = AssistantTurnWorker._normalize_intent(
+        "能否据此预测未来所有时间段？",
+        AssistantIntent(intent="clarify", rationale="ambiguous", requires_new_computation=False),
+    )
+    feature_plan = AssistantTurnWorker._normalize_plan(
+        "对 customer_id 做特征工程。",
+        AssistantIntent(
+            intent="plan_analysis", rationale="feature", requires_new_computation=True
+        ),
+        _plan("analysis.draft_spec", "analysis.run"),
+    )
+    training_plan = AssistantTurnWorker._normalize_plan(
+        "为是否流失训练分类模型。",
+        AssistantIntent(
+            intent="plan_analysis", rationale="train", requires_new_computation=True
+        ),
+        _plan("cleaning.draft_plan", "analysis.draft_spec", "analysis.run"),
+    )
+
+    assert causal.intent == "answer_from_evidence"
+    assert missing_target.intent == "inspect_data"
+    assert quality.intent == "inspect_data"
+    assert extrapolation.intent == "answer_from_evidence"
+    assert [step.tool_name for step in feature_plan.steps] == ["feature_engineering.suggest"]
+    assert [step.tool_name for step in training_plan.steps] == ["analysis.draft_spec"]
+
+
+def test_agent_adds_a_cited_causal_boundary() -> None:
+    answer = AssistantAnswer(summary="找到相关分析。")
+
+    bounded = AssistantTurnWorker._enforce_causal_boundary(
+        "相关性是否导致结果？", answer, {"art_1": "persisted artifact"}
+    )
+
+    assert bounded.findings[0].citation_ids == ["art_1"]
+    assert any("不能据此推断因果" in item for item in bounded.limitations)
+    assert AssistantTurnWorker._is_causal_overclaim_request("分析能证明某字段导致结果吗？")
 
 
 def test_read_only_tool_registry_is_project_bound(app_client) -> None:

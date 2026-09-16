@@ -143,6 +143,8 @@ def _filter_mask(series: pd.Series[Any], operator: str, value: Any) -> pd.Series
         return series.isin(value)
     if operator == "not_in":
         return ~series.isin(value)
+    if operator == "between":
+        return series.between(value[0], value[1], inclusive="both")
     if operator == "is_null":
         return series.isna()
     if operator == "not_null":

@@ -470,3 +470,43 @@ export interface AssistantMetrics {
   tool_failed_count: number;
   tool_rejected_count: number;
 }
+
+export interface AssistantTraceToolCall extends AssistantToolCall {
+  llm_run_id: string;
+  error: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AssistantRunTrace {
+  llm_run_id: string;
+  message_id: string;
+  project_id: string;
+  job_id: string | null;
+  provider: string;
+  model: string;
+  prompt_name: string;
+  prompt_version: string;
+  status: "running" | "awaiting_confirmation" | "succeeded" | "failed" | "cancelled";
+  model_call_count: number;
+  tool_call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  latency_ms: number;
+  context_manifest: Record<string, unknown>;
+  error: Record<string, unknown> | null;
+  tool_calls: AssistantTraceToolCall[];
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AssistantTraceReplay {
+  trace: AssistantRunTrace;
+  verified: boolean;
+  replayed_state: string;
+  checks: Array<{
+    name: "state_transitions" | "run_terminal_state" | "tool_call_count" | "tool_terminal_states";
+    passed: boolean;
+    details: Record<string, unknown>;
+  }>;
+}

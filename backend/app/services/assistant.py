@@ -17,17 +17,22 @@ from app.api.schemas import (
     AssistantMessageCreate,
     AssistantMessagePage,
     AssistantMetrics,
+    AssistantRunTrace,
     AssistantToolCall,
     AssistantToolCallUpdate,
+    AssistantTraceReplay,
+    AssistantTraceToolCall,
     AssistantTurnAccepted,
 )
 from app.core.config import Settings
 from app.domain.errors import DomainError, not_found, permission_denied, state_conflict
 from app.llm.actions import AssistantActionRegistry
+from app.llm.trace_replay import replay_agent_trace
 from app.persistence.orm.assistant_models import (
     AssistantConversationRow,
     AssistantFeedbackRow,
     AssistantMessageRow,
+    LLMRunRow,
     LLMToolCallRow,
 )
 from app.persistence.orm.models import DatasetVersionRow, ProjectRow
@@ -524,6 +529,91 @@ class AssistantService:
             job_id=row.job_id,
             created_at=row.created_at,
             completed_at=row.completed_at,
+        )
+
+    def get_trace(
+        self, project_id: str, message_id: str, *, subject_id: str
+    ) -> AssistantRunTrace:
+        self._require_member(project_id, subject_id)
+        self.assistant.get_message(project_id=project_id, message_id=message_id)
+        run = self.assistant.latest_llm_run_for_message(message_id)
+        if run is None:
+            raise not_found("Assistant 运行轨迹不存在")
+        calls = self._trace_tool_calls(project_id, run)
+        return self._trace_to_schema(run, calls)
+
+    def replay_trace(
+        self, project_id: str, message_id: str, *, subject_id: str
+    ) -> AssistantTraceReplay:
+        trace = self.get_trace(project_id, message_id, subject_id=subject_id)
+        replay = replay_agent_trace(
+            manifest=trace.context_manifest,
+            run_status=trace.status,
+            stored_tool_call_count=trace.tool_call_count,
+            tool_statuses=[call.status for call in trace.tool_calls],
+        )
+        return AssistantTraceReplay(trace=trace, **replay)
+
+    def _trace_tool_calls(
+        self, project_id: str, run: LLMRunRow
+    ) -> list[LLMToolCallRow]:
+        calls = self.assistant.list_tool_calls(run.llm_run_id)
+        known_ids = {call.tool_call_id for call in calls}
+        referenced_ids = run.context_manifest_json.get("tool_call_ids", [])
+        if isinstance(referenced_ids, list):
+            for tool_call_id in referenced_ids:
+                if not isinstance(tool_call_id, str) or tool_call_id in known_ids:
+                    continue
+                calls.append(
+                    self.assistant.get_tool_call_for_project(
+                        project_id=project_id,
+                        tool_call_id=tool_call_id,
+                    )
+                )
+                known_ids.add(tool_call_id)
+        return calls
+
+    @staticmethod
+    def _trace_to_schema(
+        run: LLMRunRow, calls: list[LLMToolCallRow]
+    ) -> AssistantRunTrace:
+        return AssistantRunTrace(
+            llm_run_id=run.llm_run_id,
+            message_id=run.message_id,
+            project_id=run.project_id,
+            job_id=run.job_id,
+            provider=run.provider,
+            model=run.model,
+            prompt_name=run.prompt_name,
+            prompt_version=run.prompt_version,
+            status=run.status,
+            model_call_count=run.model_call_count,
+            tool_call_count=run.tool_call_count,
+            input_tokens=run.input_tokens,
+            output_tokens=run.output_tokens,
+            latency_ms=run.latency_ms,
+            context_manifest=run.context_manifest_json,
+            error=run.error_json,
+            tool_calls=[
+                AssistantTraceToolCall(
+                    tool_call_id=call.tool_call_id,
+                    llm_run_id=call.llm_run_id,
+                    tool_name=call.tool_name,
+                    tool_version=call.tool_version,
+                    status=call.status,
+                    requires_confirmation=call.requires_confirmation,
+                    arguments=call.arguments_json,
+                    result=call.result_json,
+                    result_resource_type=call.result_resource_type,
+                    result_resource_id=call.result_resource_id,
+                    error=call.error_json,
+                    created_at=call.created_at,
+                    completed_at=call.completed_at,
+                )
+                for call in calls
+            ],
+            created_at=run.created_at,
+            completed_at=run.completed_at,
         )
 
     @staticmethod

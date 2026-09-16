@@ -1312,6 +1312,44 @@ paths:
           $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/Error"
+  /projects/{project_id}/assistant/messages/{message_id}/trace:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AssistantMessageId"
+    get:
+      tags: [Assistant]
+      operationId: getAssistantRunTrace
+      summary: 获取 Assistant Turn 的模型、状态迁移与工具执行轨迹
+      responses:
+        "200":
+          description: 项目内可审计的持久化运行轨迹
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantRunTrace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /projects/{project_id}/assistant/messages/{message_id}/trace/replay:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AssistantMessageId"
+    post:
+      tags: [Assistant]
+      operationId: replayAssistantRunTrace
+      summary: 只读回放并校验 Assistant Turn，不重新执行模型或写操作
+      responses:
+        "200":
+          description: 状态迁移、工具计数和终态一致性校验结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTraceReplay"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
   /projects/{project_id}/assistant/messages/{message_id}/confirm:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -2999,6 +3037,74 @@ components:
         arguments:
           type: object
           additionalProperties: true
+    AssistantTraceToolCall:
+      type: object
+      required: [tool_call_id, llm_run_id, tool_name, tool_version, status, requires_confirmation, arguments, result, result_resource_type, result_resource_id, error, created_at, completed_at]
+      properties:
+        tool_call_id: {type: string}
+        llm_run_id: {type: string}
+        tool_name: {type: string}
+        tool_version: {type: string}
+        status:
+          type: string
+          enum: [proposed, approved, running, succeeded, failed, rejected]
+        requires_confirmation: {type: boolean}
+        arguments: {type: object, additionalProperties: true}
+        result: {type: [object, "null"], additionalProperties: true}
+        result_resource_type: {type: [string, "null"]}
+        result_resource_id: {type: [string, "null"]}
+        error: {type: [object, "null"], additionalProperties: true}
+        created_at: {type: string, format: date-time}
+        completed_at: {type: [string, "null"], format: date-time}
+    AssistantRunTrace:
+      type: object
+      required: [llm_run_id, message_id, project_id, job_id, provider, model, prompt_name, prompt_version, status, model_call_count, tool_call_count, input_tokens, output_tokens, latency_ms, context_manifest, error, tool_calls, created_at, completed_at]
+      properties:
+        llm_run_id: {type: string}
+        message_id: {type: string}
+        project_id: {type: string}
+        job_id: {type: [string, "null"]}
+        provider: {type: string}
+        model: {type: string}
+        prompt_name: {type: string}
+        prompt_version: {type: string}
+        status:
+          type: string
+          enum: [running, awaiting_confirmation, succeeded, failed, cancelled]
+        model_call_count: {type: integer, minimum: 0}
+        tool_call_count: {type: integer, minimum: 0}
+        input_tokens: {type: integer, minimum: 0}
+        output_tokens: {type: integer, minimum: 0}
+        latency_ms: {type: integer, minimum: 0}
+        context_manifest: {type: object, additionalProperties: true}
+        error: {type: [object, "null"], additionalProperties: true}
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantTraceToolCall"
+        created_at: {type: string, format: date-time}
+        completed_at: {type: [string, "null"], format: date-time}
+    AssistantTraceCheck:
+      type: object
+      required: [name, passed, details]
+      properties:
+        name:
+          type: string
+          enum: [state_transitions, run_terminal_state, tool_call_count, tool_terminal_states]
+        passed: {type: boolean}
+        details: {type: object, additionalProperties: true}
+    AssistantTraceReplay:
+      type: object
+      required: [trace, verified, replayed_state, checks]
+      properties:
+        trace:
+          $ref: "#/components/schemas/AssistantRunTrace"
+        verified: {type: boolean}
+        replayed_state: {type: string}
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantTraceCheck"
     AssistantMessage:
       type: object
       required:

@@ -8,6 +8,7 @@ import type {
   AssistantFeedback,
   AssistantMessage,
   AssistantMetrics,
+  AssistantTraceReplay,
   AssistantToolCall,
   AssistantTurnAccepted,
   Artifact,
@@ -495,6 +496,13 @@ export const apiClient = {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey() },
       body: JSON.stringify({ content }),
+    });
+  },
+
+  replayAssistantTrace(projectId: string, messageId: string): Promise<AssistantTraceReplay> {
+    if (API_MODE === "mock") return mockApi.replayAssistantTrace(messageId);
+    return request(`/projects/${projectId}/assistant/messages/${messageId}/trace/replay`, {
+      method: "POST",
     });
   },
 

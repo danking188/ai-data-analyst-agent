@@ -845,6 +845,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/assistant/messages/{message_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        /** 获取 Assistant Turn 的模型、状态迁移与工具执行轨迹 */
+        get: operations["getAssistantRunTrace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/messages/{message_id}/trace/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 只读回放并校验 Assistant Turn，不重新执行模型或写操作 */
+        post: operations["replayAssistantRunTrace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/assistant/messages/{message_id}/confirm": {
         parameters: {
             query?: never;
@@ -1521,6 +1561,72 @@ export interface components {
             arguments: {
                 [key: string]: unknown;
             };
+        };
+        AssistantTraceToolCall: {
+            tool_call_id: string;
+            llm_run_id: string;
+            tool_name: string;
+            tool_version: string;
+            /** @enum {string} */
+            status: "proposed" | "approved" | "running" | "succeeded" | "failed" | "rejected";
+            requires_confirmation: boolean;
+            arguments: {
+                [key: string]: unknown;
+            };
+            result: {
+                [key: string]: unknown;
+            } | null;
+            result_resource_type: string | null;
+            result_resource_id: string | null;
+            error: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        AssistantRunTrace: {
+            llm_run_id: string;
+            message_id: string;
+            project_id: string;
+            job_id: string | null;
+            provider: string;
+            model: string;
+            prompt_name: string;
+            prompt_version: string;
+            /** @enum {string} */
+            status: "running" | "awaiting_confirmation" | "succeeded" | "failed" | "cancelled";
+            model_call_count: number;
+            tool_call_count: number;
+            input_tokens: number;
+            output_tokens: number;
+            latency_ms: number;
+            context_manifest: {
+                [key: string]: unknown;
+            };
+            error: {
+                [key: string]: unknown;
+            } | null;
+            tool_calls: components["schemas"]["AssistantTraceToolCall"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        AssistantTraceCheck: {
+            /** @enum {string} */
+            name: "state_transitions" | "run_terminal_state" | "tool_call_count" | "tool_terminal_states";
+            passed: boolean;
+            details: {
+                [key: string]: unknown;
+            };
+        };
+        AssistantTraceReplay: {
+            trace: components["schemas"]["AssistantRunTrace"];
+            verified: boolean;
+            replayed_state: string;
+            checks: components["schemas"]["AssistantTraceCheck"][];
         };
         AssistantMessage: {
             message_id: string;
@@ -3312,6 +3418,56 @@ export interface operations {
             };
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getAssistantRunTrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 项目内可审计的持久化运行轨迹 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantRunTrace"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    replayAssistantRunTrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 状态迁移、工具计数和终态一致性校验结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantTraceReplay"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };
     };

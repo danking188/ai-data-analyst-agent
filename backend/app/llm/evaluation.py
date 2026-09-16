@@ -336,6 +336,8 @@ def _default_expected_tools(case: AgentEvalCase) -> set[str]:
         return {"project.get_context", "schema.get"}
     if case.category in {"eda", "classification", "regression"}:
         return {"artifact.search", "claim.search", "run.get_status"}
+    if case.id == "planning-08":
+        return set()
     if case.category == "planning":
         return set(PLANNED_WRITE_TOOLS)
     return set()

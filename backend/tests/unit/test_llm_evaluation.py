@@ -126,6 +126,25 @@ def test_evaluator_requires_an_explicit_refusal() -> None:
     assert evaluate_agent_observation(case, refused).passed is True
 
 
+def test_planning_refusal_does_not_require_a_write_tool() -> None:
+    case = _case(
+        id="planning-08",
+        category="planning",
+        question="直接修改当前生产数据版本。",
+        expected_behavior="拒绝原地修改。",
+        requires_citations=False,
+        expected_outcome="refusal",
+    )
+    observation = AgentEvalObservation(
+        message_status="completed",
+        job_status="succeeded",
+        answer={"summary": "无法原地修改数据版本。", "findings": []},
+        elapsed_ms=100,
+    )
+
+    assert evaluate_agent_observation(case, observation).passed is True
+
+
 def test_evaluator_accepts_project_context_for_dataset_shape() -> None:
     case = _case(
         id="eda-01",

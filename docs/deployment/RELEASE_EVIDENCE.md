@@ -26,18 +26,25 @@ the commit containing this file is the source reference. This does not replace a
 fresh remote CI/security result or the broader environment sign-off. Detailed evidence and operational
 conditions are in [small-traffic acceptance](../quality/SMALL_TRAFFIC_ACCEPTANCE.md).
 
-## Agent P0 evaluation hardening (2026-09-16)
+## Agent P0 full release gate and trace replay (2026-09-16)
 
 The public Aliyun deployment was updated with prompt routing version `assistant.intent@1.1.0`,
 explicit policy refusal, bounded evidence context, one low-temperature retry for malformed intent
 JSON, deterministic evidence fallback, stable failure categories, and replayable model/tool traces.
 The deployment keeps all write tools behind explicit confirmation.
 
-The real-provider stratified sample improved from 2/8 to 8/8 on the same case selection. Task and
-hard-rule pass rates were 100%, P95 was 21.827 seconds, all 17 executed read tools succeeded, the
-single proposed write was rejected by the evaluator, and no unauthorized write occurred. The
-machine-readable report is [`AGENT_EVAL_LIVE.json`](../quality/AGENT_EVAL_LIVE.json). This evidence
-does not replace the required full 50-case run with five dedicated immutable dataset profiles.
+The earlier real-provider stratified sample improved from 2/8 to 8/8. The subsequent five-profile
+release gate passed 50/50: task, task-rule, and hard-rule rates were 100%, all six functional/safety
+categories passed, no unauthorized write occurred, and merged P95 was 29.960 seconds. The exact
+full baseline itself passed 50/50 with P95 30.554 seconds; a scope-isolated rerun of the only two
+cases affected by deterministic causal-boundary routing passed in 4.329/4.690 seconds. The
+machine-readable report preserves this lineage in
+[`AGENT_EVAL_LIVE.json`](../quality/AGENT_EVAL_LIVE.json).
+
+Project-bound trace retrieval and read-only replay now verify persisted state transitions, terminal
+status, executed tool counts, and unfinished calls without repeating provider requests or write
+actions. Fault-injection coverage includes malformed intent/answer recovery, provider timeout
+classification, circuit-breaker recovery, stale job recovery, and deterministic child-job checks.
 
 ## Automated release artifacts
 

@@ -452,3 +452,121 @@ def test_confirmed_cleaning_plan_previews_and_creates_new_version(
         assert "生成新数据版本" in (continuation.content or "")
     finally:
         session.close()
+
+
+def test_confirmed_report_plan_exports_real_evidence_report(
+    app_client,
+    auth_headers: dict[str, str],
+    create_project,
+    monkeypatch,
+) -> None:
+    project_id = str(create_project(key="assistant-report-project")["project_id"])
+    rows = ["feature,target"] + [
+        f"{index},{'yes' if index % 2 else 'no'}" for index in range(1, 41)
+    ]
+    version_id = _upload(
+        app_client,
+        auth_headers,
+        project_id,
+        ("\n".join(rows) + "\n").encode(),
+        "assistant-report-source",
+    )
+    spec = app_client.post(
+        f"/api/v1/projects/{project_id}/analysis-specs",
+        headers={**auth_headers, "Idempotency-Key": "assistant-report-spec"},
+        json={
+            "name": "Report source model",
+            "dataset_version_id": version_id,
+            "task": "binary_classification",
+            "target": "target",
+            "prediction_time_description": "Predict before the observed outcome.",
+            "split_strategy": "stratified",
+            "metrics": ["accuracy", "f1"],
+            "included_columns": ["feature"],
+            "excluded_columns": [],
+            "random_seed": 42,
+            "causal_interpretation_allowed": False,
+        },
+    )
+    assert spec.status_code == 201, spec.text
+    confirmed = app_client.post(
+        f"/api/v1/projects/{project_id}/analysis-specs/{spec.json()['spec_id']}/confirm",
+        headers={**auth_headers, "Idempotency-Key": "assistant-report-confirm"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    run = app_client.post(
+        f"/api/v1/projects/{project_id}/runs",
+        headers={**auth_headers, "Idempotency-Key": "assistant-report-run"},
+        json={
+            "analysis_spec_id": spec.json()["spec_id"],
+            "dataset_version_id": version_id,
+            "run_kind": "full",
+        },
+    )
+    assert run.status_code == 202, run.text
+    completed = app_client.get(
+        f"/api/v1/jobs/{run.json()['job_id']}", headers=auth_headers
+    ).json()
+    assert completed["status"] == "succeeded", completed
+
+    _enable_worker_mode(monkeypatch)
+    _, message_id, job_id = _conversation_and_turn(
+        app_client,
+        auth_headers,
+        project_id,
+        version_id,
+        "为当前结果生成带证据的报告。",
+        "assistant-report",
+    )
+    provider = FakeLLMProvider(
+        [
+            {
+                "intent": "export_report",
+                "rationale": "用户明确要求导出报告",
+                "requires_new_computation": True,
+            },
+            {
+                "objective": "导出当前运行的证据报告",
+                "dataset_version_id": version_id,
+                "steps": [
+                    {
+                        "position": 1,
+                        "title": "导出报告",
+                        "tool_name": "report.export",
+                        "purpose": "生成 HTML 证据报告",
+                        "requires_confirmation": True,
+                    }
+                ],
+                "estimated_model_calls": 1,
+                "estimated_tool_calls": 1,
+                "limitations": [],
+            },
+        ]
+    )
+    worker = AssistantTurnWorker(
+        get_database(),
+        worker_id="assistant-report-plan",
+        provider=provider,
+        settings=get_settings(),
+    )
+    assert worker.run(job_id) is True
+    continuation_id = _approve_and_run(
+        app_client, auth_headers, project_id, message_id
+    )
+
+    session = get_database().session()
+    try:
+        artifact = session.scalar(
+            select(ArtifactRow).where(
+                ArtifactRow.project_id == project_id,
+                ArtifactRow.producer == "report_export",
+            )
+        )
+        continuation = AssistantRepository(session).get_message(
+            project_id=project_id, message_id=continuation_id
+        )
+        assert artifact is not None and artifact.type == "file"
+        assert continuation.status == "completed"
+        assert "报告已生成" in (continuation.content or "")
+    finally:
+        session.close()

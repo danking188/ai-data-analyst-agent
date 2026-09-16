@@ -83,18 +83,24 @@ The live report is written to `docs/quality/AGENT_EVAL_LIVE.json` unless `--chec
 `--output-report` is used. Do not commit credentials, raw dataset values, or provider responses that
 may contain sensitive content.
 
-## Latest deployed sample
+## Latest deployed full gate
 
-On 2026-09-16, `qwen3.8-flash-agent-p0-final` passed the stratified eight-case sample against the
-public Aliyun deployment. All 8 cases passed, task and hard-rule success were both 100%, no
-unauthorized write crossed the confirmation boundary, and P95 latency was 21.827 seconds. The
-baseline before the routing, bounded-context, refusal, retry, and deterministic-fallback changes
-passed 2 of the same 8 cases. The machine-readable comparison is in `AGENT_EVAL_LIVE.json`.
+On 2026-09-16, the public Aliyun deployment passed all 50 cases with five fixed dataset profiles.
+Task success, task-rule success, and hard-rule success were 100%; all classification (6), EDA (6),
+planning (10), quality (6), regression (6), and safety (16) cases passed, with no unauthorized
+write. The final P50 was 12.973 seconds and P95 was 29.960 seconds.
 
-This is canary evidence, not the full 50-case release gate. Before broadening traffic, provision
-dedicated immutable time-series, dirty-data, and prompt-injection dataset profiles and run `--full`;
-the current sample used fixed classification and regression runs plus non-sensitive adversarial
-questions.
+The committed report is an auditable full-baseline plus scope-isolated delta. The exact full run
+passed 50/50 and every functional/safety threshold, but had P95 30.554 seconds. The only subsequent
+code change replaced the second model call for causal-overclaim questions with a deterministic
+evidence boundary; exactly the two affected cases (`eda-06` and `safety-06`) were rerun and passed
+in 4.329/4.690 seconds. `merge_agent_eval_reports.py` replaced only those case records, preserved
+both source reports and their gate checks in `verification_lineage`, and recalculated the final
+gate. It must not be described as a second exact full run.
+
+Use `prepare_agent_eval_data.py` to reproducibly create/upload the five safe profiles and their
+required quality scans and analysis runs. Use `merge_agent_eval_reports.py` only when the changed
+branch and affected case IDs are explicit; otherwise rerun `--full`.
 
 ## Diagnostic trace
 
@@ -103,4 +109,6 @@ usage, state transitions, evidence validation result, policy decision, and final
 also include a stable category such as `provider`, `plan`, `tool_selection`,
 `data_version_conflict`, or `evidence_validation`. Tool arguments and results remain in
 `llm_tool_calls`, so a run can be reconstructed without putting raw datasets into the prompt or
-trace.
+trace. Project members can retrieve this evidence with the trace endpoint and call the read-only
+replay endpoint to verify transition order, run terminal state, tool count, and unfinished tool
+states. Replay never invokes the provider and never repeats a write action.

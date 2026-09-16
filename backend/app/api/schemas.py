@@ -779,6 +779,62 @@ class AssistantToolCallUpdate(StrictModel):
     arguments: dict[str, Any]
 
 
+class AssistantTraceToolCall(BaseModel):
+    tool_call_id: str
+    llm_run_id: str
+    tool_name: str
+    tool_version: str
+    status: Literal["proposed", "approved", "running", "succeeded", "failed", "rejected"]
+    requires_confirmation: bool
+    arguments: dict[str, Any]
+    result: dict[str, Any] | None
+    result_resource_type: str | None
+    result_resource_id: str | None
+    error: dict[str, Any] | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class AssistantRunTrace(BaseModel):
+    llm_run_id: str
+    message_id: str
+    project_id: str
+    job_id: str | None
+    provider: str
+    model: str
+    prompt_name: str
+    prompt_version: str
+    status: Literal["running", "awaiting_confirmation", "succeeded", "failed", "cancelled"]
+    model_call_count: int = Field(ge=0)
+    tool_call_count: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    latency_ms: int = Field(ge=0)
+    context_manifest: dict[str, Any]
+    error: dict[str, Any] | None
+    tool_calls: list[AssistantTraceToolCall]
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class AssistantTraceCheck(BaseModel):
+    name: Literal[
+        "state_transitions",
+        "run_terminal_state",
+        "tool_call_count",
+        "tool_terminal_states",
+    ]
+    passed: bool
+    details: dict[str, Any]
+
+
+class AssistantTraceReplay(BaseModel):
+    trace: AssistantRunTrace
+    verified: bool
+    replayed_state: str
+    checks: list[AssistantTraceCheck]
+
+
 class AssistantMessage(BaseModel):
     message_id: str
     conversation_id: str

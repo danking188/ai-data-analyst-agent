@@ -6,6 +6,7 @@ import type {
   AssistantFeedback,
   AssistantMessage,
   AssistantMetrics,
+  AssistantTraceReplay,
   AssistantTurnAccepted,
   Artifact,
   Claim,
@@ -879,6 +880,57 @@ export const mockApi = {
     message.content = "计划已确认，后续操作将由受控任务继续执行。";
     const continuation = await this.createAssistantMessage("", message.conversation_id, "执行已确认计划");
     return { ...continuation, user_message: null };
+  },
+
+  async replayAssistantTrace(messageId: string): Promise<AssistantTraceReplay> {
+    await wait(80);
+    const message = [...assistantMessages.values()]
+      .flat()
+      .find((item) => item.message_id === messageId && item.role === "assistant");
+    if (!message) throw new Error("Assistant 运行轨迹不存在");
+    const now = message.completed_at ?? message.created_at;
+    const toolCalls = message.tool_calls.map((call) => ({
+      ...structuredClone(call),
+      llm_run_id: `llmr_${message.message_id}`,
+      error: null,
+      created_at: message.created_at,
+      completed_at: now,
+    }));
+    return {
+      trace: {
+        llm_run_id: `llmr_${message.message_id}`,
+        message_id: message.message_id,
+        project_id: seedProject.project_id,
+        job_id: message.job_id,
+        provider: "fake",
+        model: "mock-model",
+        prompt_name: "assistant.intent",
+        prompt_version: "1.1.0",
+        status: message.status === "failed" ? "failed" : "succeeded",
+        model_call_count: 2,
+        tool_call_count: toolCalls.length,
+        input_tokens: 240,
+        output_tokens: 80,
+        latency_ms: 320,
+        context_manifest: {
+          orchestration: {
+            state: message.status === "failed" ? "failed" : "complete",
+          },
+        },
+        error: null,
+        tool_calls: toolCalls,
+        created_at: message.created_at,
+        completed_at: now,
+      },
+      verified: true,
+      replayed_state: message.status === "failed" ? "failed" : "complete",
+      checks: [
+        { name: "state_transitions", passed: true, details: {} },
+        { name: "run_terminal_state", passed: true, details: {} },
+        { name: "tool_call_count", passed: true, details: {} },
+        { name: "tool_terminal_states", passed: true, details: {} },
+      ],
+    };
   },
 
   async updateAssistantToolCall(

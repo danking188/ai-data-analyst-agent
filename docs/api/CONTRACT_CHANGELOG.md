@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+- 新增 `GET /projects/{project_id}/assistant/messages/{message_id}/trace` 与只读
+  `POST .../trace/replay`，项目成员可查看并校验持久化的状态迁移、模型调用、工具结果、
+  失败分类和资源引用；回放不会再次调用模型或执行写操作。
 - 新增 `GET /projects/{project_id}/assistant/metrics`，返回近 1~90 天的 Turn 成功/
   失败数、Token、平均与 P95 延迟，以及工具成功、失败和拒绝数。
 

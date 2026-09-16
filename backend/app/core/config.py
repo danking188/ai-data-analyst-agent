@@ -164,7 +164,7 @@ def get_settings() -> Settings:
         llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
         llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096")),
         llm_max_input_tokens=int(os.getenv("LLM_MAX_INPUT_TOKENS", "24000")),
-        llm_max_calls_per_turn=int(os.getenv("LLM_MAX_CALLS_PER_TURN", "4")),
+        llm_max_calls_per_turn=int(os.getenv("LLM_MAX_CALLS_PER_TURN", "6")),
         llm_max_tool_calls_per_turn=int(os.getenv("LLM_MAX_TOOL_CALLS_PER_TURN", "8")),
         llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "2")),
         llm_daily_token_budget_per_user=int(os.getenv("LLM_DAILY_TOKEN_BUDGET_PER_USER", "200000")),

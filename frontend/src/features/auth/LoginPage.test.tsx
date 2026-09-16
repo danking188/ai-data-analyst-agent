@@ -53,6 +53,10 @@ describe("LoginPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "注册" }));
     expect(screen.getByText(/3-32 位/)).toBeInTheDocument();
     expect(screen.getByText(/至少 12 个字符/)).toBeInTheDocument();
+    expect(screen.getByLabelText("用户名")).toHaveAttribute(
+      "pattern",
+      "[A-Za-z0-9][A-Za-z0-9_.\\x2d]{2,31}",
+    );
 
     fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "new-user" } });
     fireEvent.change(screen.getByLabelText("密码"), {

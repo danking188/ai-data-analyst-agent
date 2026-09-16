@@ -19,7 +19,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
-import type { AssistantMessage, AssistantToolCall } from "../../api/contracts";
+import type {
+  AssistantMessage,
+  AssistantToolCall,
+  AssistantTraceReplay,
+} from "../../api/contracts";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
@@ -35,6 +39,7 @@ export function AssistantPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
+  const [selectedTrace, setSelectedTrace] = useState<AssistantTraceReplay | null>(null);
   const [feedbackSent, setFeedbackSent] = useState<Set<string>>(new Set());
   const messageEndRef = useRef<HTMLDivElement>(null);
 
@@ -194,6 +199,15 @@ export function AssistantPage() {
       pushToast("反馈已记录");
     },
   });
+  const replayTrace = useMutation({
+    mutationFn: (messageId: string) =>
+      apiClient.replayAssistantTrace(project!.project_id, messageId),
+    onSuccess: (replay) => {
+      setSelectedTrace(replay);
+      pushToast(replay.verified ? "运行轨迹校验通过" : "运行轨迹存在不一致", replay.verified ? "success" : "error");
+    },
+    onError: (error) => pushToast(error instanceof Error ? error.message : "轨迹回放失败", "error"),
+  });
   const archiveConversation = useMutation({
     mutationFn: () =>
       apiClient.updateAssistantConversation(project!.project_id, selectedConversationId!, {
@@ -296,6 +310,8 @@ export function AssistantPage() {
                   onDecision={(decision) => planDecision.mutate({ message, decision })}
                   onFeedback={(rating) => feedback.mutate({ messageId: message.message_id, rating })}
                   onRetry={() => retryMessage.mutate(message.message_id)}
+                  onTraceReplay={() => replayTrace.mutate(message.message_id)}
+                  traceReplayPending={replayTrace.isPending}
                   onUpdateToolCall={(call, argumentsValue) => updateToolCall.mutateAsync({ call, argumentsValue }).then(() => undefined)}
                 />
               ))}
@@ -385,6 +401,9 @@ export function AssistantPage() {
           projectId={project.project_id}
         />
       ) : null}
+      {selectedTrace ? (
+        <TraceDrawer onClose={() => setSelectedTrace(null)} replay={selectedTrace} />
+      ) : null}
     </>
   );
 }
@@ -398,6 +417,8 @@ function MessageItem({
   onCitation,
   onFeedback,
   onUpdateToolCall,
+  onTraceReplay,
+  traceReplayPending,
 }: {
   message: AssistantMessage;
   feedbackSent: boolean;
@@ -410,6 +431,8 @@ function MessageItem({
     call: AssistantToolCall,
     argumentsValue: Record<string, unknown>,
   ) => Promise<void>;
+  onTraceReplay: () => void;
+  traceReplayPending: boolean;
 }) {
   const isAssistant = message.role === "assistant";
   return (
@@ -484,6 +507,11 @@ function MessageItem({
               <button aria-label="回答有帮助" onClick={() => onFeedback("helpful")}><ThumbsUp size={14} /></button>
               <button aria-label="回答没有帮助" onClick={() => onFeedback("not_helpful")}><ThumbsDown size={14} /></button>
             </>
+          ) : null}
+          {["awaiting_confirmation", "completed", "failed", "cancelled"].includes(message.status) ? (
+            <button disabled={traceReplayPending} onClick={onTraceReplay}>
+              <FileSearch size={14} />回放校验
+            </button>
           ) : null}
         </footer>
       ) : null}
@@ -650,4 +678,49 @@ function CitationDrawer({
       {value ? <pre>{JSON.stringify(value, null, 2)}</pre> : null}
     </aside>
   );
+}
+
+function TraceDrawer({
+  replay,
+  onClose,
+}: {
+  replay: AssistantTraceReplay;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="assistant-citation-drawer assistant-trace-drawer">
+      <header>
+        <div><FileSearch size={17} /><h2>Agent 运行轨迹</h2></div>
+        <button aria-label="关闭运行轨迹" className="icon-button" onClick={onClose}><X size={18} /></button>
+      </header>
+      <strong>{replay.verified ? "校验通过" : "发现不一致"} · {replay.trace.llm_run_id}</strong>
+      <dl>
+        <div><dt>模型</dt><dd>{replay.trace.model}</dd></div>
+        <div><dt>状态</dt><dd>{replay.trace.status} → {replay.replayed_state}</dd></div>
+        <div><dt>调用</dt><dd>{replay.trace.model_call_count} 次模型 / {replay.trace.tool_call_count} 次工具</dd></div>
+        <div><dt>延迟</dt><dd>{(replay.trace.latency_ms / 1000).toFixed(2)} 秒</dd></div>
+      </dl>
+      <ol>
+        {replay.checks.map((check) => (
+          <li key={check.name}>
+            <StatusBadge status={check.passed ? "succeeded" : "failed"} />
+            <span>{traceCheckLabel(check.name)}</span>
+          </li>
+        ))}
+      </ol>
+      <details>
+        <summary>查看完整持久化轨迹</summary>
+        <pre>{JSON.stringify(replay.trace.context_manifest, null, 2)}</pre>
+      </details>
+    </aside>
+  );
+}
+
+function traceCheckLabel(name: AssistantTraceReplay["checks"][number]["name"]) {
+  return {
+    state_transitions: "状态迁移连续",
+    run_terminal_state: "运行终态一致",
+    tool_call_count: "工具调用计数一致",
+    tool_terminal_states: "工具均已结束",
+  }[name];
 }

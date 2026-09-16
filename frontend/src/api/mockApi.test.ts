@@ -64,5 +64,8 @@ describe("mockApi contract behavior", () => {
     const feedback = await mockApi.createAssistantFeedback(completed.message_id, "helpful");
     expect(feedback.message_id).toBe(completed.message_id);
     expect(feedback.rating).toBe("helpful");
+    const replay = await mockApi.replayAssistantTrace(completed.message_id);
+    expect(replay.verified).toBe(true);
+    expect(replay.checks.every((check) => check.passed)).toBe(true);
   });
 });

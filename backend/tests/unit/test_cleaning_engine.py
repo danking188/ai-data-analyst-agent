@@ -143,6 +143,20 @@ def test_filter_operators(
     assert result.frame["value"].tolist() == expected
 
 
+def test_filter_rows_between_keeps_both_boundaries() -> None:
+    frame = pd.DataFrame({"id": [1, 2, 3, 4], "value": [5, 10, 20, 30]})
+    candidate = operation(
+        "filter_rows",
+        column="value",
+        parameters={"operator": "between", "value": [10, 20]},
+    )
+
+    validate_cleaning_operations([candidate], columns=set(frame.columns), issue_ids=set())
+    result = apply_cleaning_operations(frame, [candidate])
+
+    assert result.frame["id"].tolist() == [2, 3]
+
+
 def test_engine_reports_unapplicable_operations() -> None:
     with pytest.raises(DomainError) as cast_error:
         apply_cleaning_operations(

@@ -20,8 +20,10 @@ from app.api.schemas import (
     AssistantMessageCreate,
     AssistantMessagePage,
     AssistantMetrics,
+    AssistantRunTrace,
     AssistantToolCall,
     AssistantToolCallUpdate,
+    AssistantTraceReplay,
     AssistantTurnAccepted,
 )
 from app.core.config import Settings, get_settings
@@ -53,6 +55,40 @@ def get_metrics(
         project_id,
         subject_id=principal.subject_id,
         window_days=window_days,
+    )
+
+
+@router.get(
+    "/messages/{message_id}/trace",
+    response_model=AssistantRunTrace,
+    operation_id="getAssistantRunTrace",
+)
+def get_run_trace(
+    project_id: str,
+    message_id: str,
+    principal: Annotated[Principal, Depends(authenticate)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssistantRunTrace:
+    return AssistantService(session, settings).get_trace(
+        project_id, message_id, subject_id=principal.subject_id
+    )
+
+
+@router.post(
+    "/messages/{message_id}/trace/replay",
+    response_model=AssistantTraceReplay,
+    operation_id="replayAssistantRunTrace",
+)
+def replay_run_trace(
+    project_id: str,
+    message_id: str,
+    principal: Annotated[Principal, Depends(authenticate)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssistantTraceReplay:
+    return AssistantService(session, settings).replay_trace(
+        project_id, message_id, subject_id=principal.subject_id
     )
 
 

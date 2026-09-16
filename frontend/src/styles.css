@@ -1079,6 +1079,52 @@ dt {
   word-break: break-word;
 }
 
+.assistant-trace-drawer dl {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.assistant-trace-drawer dl div,
+.assistant-trace-drawer ol li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assistant-trace-drawer dt,
+.assistant-trace-drawer dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.assistant-trace-drawer dt {
+  color: var(--muted);
+}
+
+.assistant-trace-drawer ol {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.assistant-trace-drawer ol li {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.assistant-trace-drawer summary {
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .text-action,
 .panel__header a {
   display: inline-flex;

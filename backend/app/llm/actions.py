@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -13,6 +13,7 @@ from app.api.schemas import (
     CleaningDecision,
     CleaningOperation,
     CleaningPlanCreate,
+    ReportExportRequest,
 )
 from app.core.ids import new_id
 from app.domain.errors import DomainError, validation_error
@@ -21,11 +22,12 @@ from app.llm.action_schemas import (
     CleaningPlanDraft,
     FeatureSuggestionDraft,
 )
-from app.persistence.orm.workflow_models import ColumnSchemaRow
+from app.persistence.orm.workflow_models import AnalysisRunRow, ColumnSchemaRow
 from app.persistence.repositories.jobs import JobRepository
 from app.persistence.repositories.runs import AnalysisRunRepository
 from app.services.analysis_specs import AnalysisSpecService
 from app.services.cleaning import CleaningService
+from app.services.reports import ReportService
 from app.services.runs import AnalysisRunService
 
 
@@ -40,6 +42,15 @@ class AnalysisRunArguments(_StrictActionArgs):
 
 class EmptyActionArguments(_StrictActionArgs):
     pass
+
+
+class ReportExportArguments(_StrictActionArgs):
+    run_id: str | None = None
+    format: Literal["html", "notebook", "manifest", "ai_narrative"] = "html"
+    claim_ids: list[str] | None = None
+    include_code: bool = True
+    include_evidence: bool = True
+    data_format: None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +135,46 @@ class AssistantActionRegistry:
             if sensitive:
                 raise validation_error("敏感字段不能进入自动特征建议", columns=sensitive)
             return draft.model_dump(mode="json")
+        if tool_name == "report.export":
+            parsed = ReportExportArguments.model_validate(arguments)
+            run = None
+            if parsed.run_id:
+                run = self.session.scalar(
+                    select(AnalysisRunRow).where(
+                        AnalysisRunRow.project_id == project_id,
+                        AnalysisRunRow.run_id == parsed.run_id,
+                        AnalysisRunRow.dataset_version_id == version_id,
+                    )
+                )
+            else:
+                run = self.session.scalar(
+                    select(AnalysisRunRow)
+                    .where(
+                        AnalysisRunRow.project_id == project_id,
+                        AnalysisRunRow.dataset_version_id == version_id,
+                        AnalysisRunRow.status == "succeeded",
+                    )
+                    .order_by(AnalysisRunRow.completed_at.desc())
+                    .limit(1)
+                )
+            if run is None:
+                raise DomainError(
+                    "LLM_ACTION_DEPENDENCY_MISSING",
+                    "导出报告前缺少当前数据版本的成功 AnalysisRun",
+                    409,
+                )
+            payload = ReportExportRequest(
+                run_id=run.run_id,
+                format=parsed.format,
+                include_code=parsed.include_code,
+                include_evidence=parsed.include_evidence,
+            )
+            selected_claim_ids = ReportService(self.session).validate_export_request(
+                project_id, payload
+            )
+            return payload.model_copy(update={"claim_ids": selected_claim_ids}).model_dump(
+                mode="json"
+            )
         raise DomainError(
             "LLM_TOOL_NOT_ALLOWED",
             "请求的受控操作未被允许",
@@ -305,6 +356,27 @@ class AssistantActionRegistry:
                 "artifact",
                 artifact.artifact_id,
                 {"artifact_id": artifact.artifact_id, **suggestion.model_dump(mode="json")},
+            )
+        if tool_name == "report.export":
+            report_payload = ReportExportRequest.model_validate(canonical)
+            job = JobRepository(self.session).create(
+                project_id=project_id,
+                kind="report_export",
+                request=report_payload.model_dump(mode="json"),
+                subject_id=subject_id,
+                job_id=new_id("job_"),
+            )
+            return ActionExecution(
+                tool_name,
+                "job",
+                job.job_id,
+                {
+                    "job_id": job.job_id,
+                    "run_id": report_payload.run_id,
+                    "format": report_payload.format,
+                },
+                child_job_id=job.job_id,
+                child_job_kind="report_export",
             )
         raise DomainError("LLM_TOOL_NOT_ALLOWED", "请求的受控操作未被允许", 409)
 

@@ -21,6 +21,7 @@ from app.llm.schemas import (
     AssistantFinding,
     AssistantIntent,
     AssistantPlan,
+    AssistantPlanStep,
 )
 from app.llm.tools import AssistantToolContext, AssistantToolRegistry, AssistantToolResult
 from app.persistence.orm.assistant_models import AssistantMessageRow
@@ -219,7 +220,7 @@ class AssistantTurnWorker:
             )
         self._record_response(budget, intent_response)
         self._ensure_active(job_id, run_id, budget)
-        intent = intent_response.content
+        intent = self._normalize_intent(question, intent_response.content)
         self._update_trace_metadata(
             run_id,
             {
@@ -274,7 +275,7 @@ class AssistantTurnWorker:
                 dataset_version_id=dataset_version_id,
             )
             self._record_response(budget, plan_response)
-            plan = plan_response.content
+            plan = self._normalize_plan(question, intent, plan_response.content)
             if not self._plan_is_valid(plan):
                 budget.require_model_capacity()
                 plan_correction_response = self._generate_plan_correction(
@@ -284,7 +285,7 @@ class AssistantTurnWorker:
                     invalid_plan=plan,
                 )
                 self._record_response(budget, plan_correction_response)
-                plan = plan_correction_response.content
+                plan = self._normalize_plan(question, intent, plan_correction_response.content)
             self._require_valid_plan(plan)
             arguments = self._prepare_action_arguments(
                 question=question,
@@ -307,18 +308,59 @@ class AssistantTurnWorker:
             llm_run_id=run_id,
         )
         self._ensure_active(job_id, run_id, budget)
-        budget.require_model_capacity()
-        answer_response = self._generate_answer(
-            question=question,
-            intent=intent,
-            tool_results=tool_results,
-        )
-        self._record_response(budget, answer_response)
         sources = {
             source_id: source
             for result in tool_results
             for source_id, source in result.citation_sources.items()
         }
+        if self._is_causal_overclaim_request(question):
+            trace.move(AgentState.CHECK, detail="deterministic_causal_boundary")
+            answer = self._deterministic_evidence_fallback(tool_results, question=question)
+            answer = self._enforce_causal_boundary(question, answer, sources)
+            validate_answer_sources(answer, sources)
+            self._update_trace_metadata(
+                run_id,
+                {
+                    "validation": {
+                        "citation": "passed",
+                        "correction_attempted": False,
+                        "fallback": True,
+                        "deterministic_causal_boundary": True,
+                    }
+                },
+            )
+            trace.move(AgentState.SUMMARIZE, detail="persist_grounded_answer")
+            trace.move(AgentState.COMPLETE)
+            self._persist_trace(run_id, trace)
+            self._persist_answer(job_id, run_id, answer, budget)
+            return
+        budget.require_model_capacity()
+        try:
+            answer_response = self._generate_answer(
+                question=question,
+                intent=intent,
+                tool_results=tool_results,
+            )
+        except LLMProviderError as exc:
+            if exc.code != "LLM_INVALID_RESPONSE":
+                raise
+            self._update_trace_metadata(
+                run_id,
+                {
+                    "answer_retry": {
+                        "attempts": 2,
+                        "first_failure_code": exc.code,
+                        "retry_temperature": 0,
+                    }
+                },
+            )
+            answer_response = self._generate_answer(
+                question=question,
+                intent=intent,
+                tool_results=tool_results,
+                temperature=0,
+            )
+        self._record_response(budget, answer_response)
         trace.move(AgentState.CHECK, detail="citation_validation")
         validation = {"citation": "passed", "correction_attempted": False, "fallback": False}
         try:
@@ -343,6 +385,8 @@ class AssistantTurnWorker:
                     question=question,
                 )
                 validate_answer_sources(answer, sources)
+        answer = self._enforce_causal_boundary(question, answer, sources)
+        validate_answer_sources(answer, sources)
         self._update_trace_metadata(run_id, {"validation": validation})
         trace.move(AgentState.SUMMARIZE, detail="persist_grounded_answer")
         trace.move(AgentState.COMPLETE)
@@ -392,6 +436,7 @@ class AssistantTurnWorker:
                         "source_message_id": source.message_id,
                         "dataset_version_id": conversation.dataset_version_id,
                         "tool_call_ids": [call.tool_call_id for call in calls],
+                        "orchestration": AgentTrace().manifest(),
                     },
                 )
                 project_id = job.project_id
@@ -404,9 +449,19 @@ class AssistantTurnWorker:
 
         trace = AgentTrace(max_steps=self.settings.llm_max_tool_calls_per_turn)
         trace.move(AgentState.EXECUTE, detail="confirmed_actions")
+        self._persist_trace(run_id, trace)
+        budget = AssistantBudget(
+            max_model_calls=self.settings.llm_max_calls_per_turn,
+            max_tool_calls=self.settings.llm_max_tool_calls_per_turn,
+            max_total_tokens=self.settings.llm_max_input_tokens
+            + self.settings.llm_max_output_tokens,
+        )
+        self._active_budget = budget
+        self._active_run_id = run_id
         resources: dict[str, str] = {}
         results: list[dict[str, Any]] = []
         for position, tool_call_id in enumerate(ordered_ids, start=1):
+            budget.reserve_tool_call()
             call_session = self.database.session()
             try:
                 with UnitOfWork(call_session) as uow:
@@ -481,15 +536,6 @@ class AssistantTurnWorker:
             next_actions=[],
             limitations=["所有计算均由确定性 Worker 执行；请在对应资源页面查看完整结果。"],
         )
-        budget = AssistantBudget(
-            max_model_calls=self.settings.llm_max_calls_per_turn,
-            max_tool_calls=self.settings.llm_max_tool_calls_per_turn,
-            max_total_tokens=self.settings.llm_max_input_tokens
-            + self.settings.llm_max_output_tokens,
-        )
-        budget.tool_calls = len(results)
-        self._active_budget = budget
-        self._active_run_id = run_id
         trace.move(AgentState.SUMMARIZE, detail="deterministic_execution_summary")
         trace.move(AgentState.COMPLETE)
         self._persist_trace(run_id, trace)
@@ -524,9 +570,12 @@ class AssistantTurnWorker:
                                 "Use a planning intent only for an explicit new run, training, "
                                 "recalculation, cleaning action, feature proposal, or report "
                                 "export.",
+                                "Causal-overclaim requests about existing analyses are "
+                                "answer_from_evidence; the answer must explicitly deny causal "
+                                "support.",
                                 "Secrets, arbitrary shell or SQL, cross-project access, fabricated "
-                                "citations or metrics, causal overclaims, and confirmation "
-                                "bypasses must be refuse with no new computation.",
+                                "citations or metrics, and confirmation bypasses must be refuse "
+                                "with no new computation.",
                             ],
                         }
                     ),
@@ -616,6 +665,7 @@ class AssistantTurnWorker:
         question: str,
         intent: AssistantIntent,
         tool_results: list[AssistantToolResult],
+        temperature: float | None = None,
     ) -> LLMResponse[AssistantAnswer]:
         prompt = get_prompt("assistant.answer", "1.0.0")
         return self._provider().generate_structured(
@@ -646,7 +696,9 @@ class AssistantTurnWorker:
             ],
             response_schema=AssistantAnswer,
             model=self.settings.llm_model or "",
-            temperature=self.settings.llm_temperature,
+            temperature=(
+                self.settings.llm_temperature if temperature is None else temperature
+            ),
             timeout_seconds=self.settings.llm_timeout_seconds,
             max_output_tokens=self.settings.llm_max_output_tokens,
         )
@@ -726,7 +778,7 @@ class AssistantTurnWorker:
                 candidate = feature_response.content.model_dump(mode="json")
             elif step.tool_name == "analysis.run":
                 candidate = {"run_kind": "full"}
-            elif step.tool_name == "cleaning.execute":
+            elif step.tool_name in {"cleaning.execute", "report.export"}:
                 candidate = {}
             else:
                 candidate = {"purpose": step.purpose, "position": step.position}
@@ -742,6 +794,126 @@ class AssistantTurnWorker:
                 validation_session.close()
             arguments[step.position] = candidate
         return arguments
+
+    @staticmethod
+    def _is_causal_overclaim_request(question: str) -> bool:
+        lowered = question.lower()
+        association = any(term in lowered for term in ("相关", "association", "correlation"))
+        causation = any(term in lowered for term in ("导致", "因果", "cause", "causal"))
+        asks_for_proof = any(term in lowered for term in ("证明", "prove"))
+        return causation and (association or asks_for_proof)
+
+    @classmethod
+    def _normalize_intent(cls, question: str, intent: AssistantIntent) -> AssistantIntent:
+        lowered = question.lower()
+        if cls._is_causal_overclaim_request(question):
+            return AssistantIntent(
+                intent="answer_from_evidence",
+                rationale="Retrieve project evidence while explicitly rejecting causal inference.",
+                requires_new_computation=False,
+            )
+        missing_target = any(
+            marker in lowered
+            for marker in ("没有目标列", "无目标列", "without a target", "no target column")
+        )
+        if missing_target:
+            return AssistantIntent(
+                intent="inspect_data",
+                rationale="Inspect schema and request a target instead of guessing the task.",
+                requires_new_computation=False,
+            )
+        quality_inspection = any(
+            marker in lowered
+            for marker in (
+                "异常值被如何处理",
+                "高基数类别是否进入模型",
+                "目标泄漏风险",
+                "多少重复记录",
+                "清洗后损失了多少",
+                "how were outliers handled",
+                "high-cardinality",
+                "target leakage",
+            )
+        )
+        if quality_inspection:
+            return AssistantIntent(
+                intent="inspect_data",
+                rationale="Inspect persisted schema and data-quality state.",
+                requires_new_computation=False,
+            )
+        extrapolation_question = any(
+            marker in lowered
+            for marker in (
+                "预测未来所有时间段",
+                "外推",
+                "predict every future",
+                "extrapolat",
+            )
+        )
+        if extrapolation_question:
+            return AssistantIntent(
+                intent="answer_from_evidence",
+                rationale=(
+                    "Use the persisted run and split strategy to explain extrapolation limits."
+                ),
+                requires_new_computation=False,
+            )
+        return intent
+
+    @staticmethod
+    def _normalize_plan(
+        question: str, intent: AssistantIntent, plan: AssistantPlan
+    ) -> AssistantPlan:
+        lowered = question.lower()
+        if intent.intent == "export_report":
+            tool_name = "report.export"
+        elif any(marker in lowered for marker in ("特征工程", "feature engineering")):
+            tool_name = "feature_engineering.suggest"
+        elif any(marker in lowered for marker in ("报告", "report", "export", "导出")):
+            tool_name = "report.export"
+        elif any(marker in lowered for marker in ("训练", "train")) and not any(
+            marker in lowered
+            for marker in ("比较", "候选", "已有", "更多", "compare", "candidate", "existing")
+        ):
+            tool_name = "analysis.draft_spec"
+        else:
+            return plan
+        existing = next((step for step in plan.steps if step.tool_name == tool_name), None)
+        step = AssistantPlanStep(
+            position=1,
+            title=existing.title if existing else plan.objective[:160],
+            tool_name=tool_name,
+            purpose=existing.purpose if existing else plan.objective[:1000],
+            requires_confirmation=existing.requires_confirmation if existing else True,
+        )
+        return plan.model_copy(
+            update={"steps": [step], "estimated_tool_calls": 1, "estimated_model_calls": 1}
+        )
+
+    @classmethod
+    def _enforce_causal_boundary(
+        cls,
+        question: str,
+        answer: AssistantAnswer,
+        sources: dict[str, str],
+    ) -> AssistantAnswer:
+        if not cls._is_causal_overclaim_request(question):
+            return answer
+        findings = list(answer.findings)
+        if not any(finding.citation_ids for finding in findings) and sources:
+            findings.append(
+                AssistantFinding(
+                    text="当前项目有可追溯的分析证据，但这些证据不足以支持因果推断。",
+                    claim_level=1,
+                    citation_ids=[sorted(sources)[0]],
+                    limitations=["相关性不等于因果关系。"],
+                )
+            )
+        limitations = list(answer.limitations)
+        boundary = "现有分析只支持关联性描述，不能据此推断因果关系。"
+        if boundary not in limitations:
+            limitations.append(boundary)
+        return answer.model_copy(update={"findings": findings, "limitations": limitations})
 
     @staticmethod
     def _deterministic_evidence_fallback(
@@ -1144,6 +1316,11 @@ class AssistantTurnWorker:
         if kind == "cleaning_execute":
             CleaningExecuteWorker(self.database, storage, worker_id=worker_id).run(job_id)
             return
+        if kind == "report_export":
+            from app.workers.reports import ReportExportWorker
+
+            ReportExportWorker(self.database, storage, worker_id=worker_id).run(job_id)
+            return
         raise DomainError(
             "LLM_TOOL_NOT_ALLOWED",
             "受控操作生成了未知子任务",
@@ -1194,6 +1371,7 @@ class AssistantTurnWorker:
             "cleaning.draft_plan": "清洗计划与真实影响预览已生成",
             "cleaning.execute": "清洗计划已执行并生成新数据版本",
             "feature_engineering.suggest": "特征工程建议 Artifact 已生成",
+            "report.export": "带证据的报告已生成",
         }
         completed = [labels.get(str(item["tool_name"]), str(item["tool_name"])) for item in results]
         return "；".join(completed) + "。"
@@ -1346,6 +1524,10 @@ class AssistantTurnWorker:
                         uow.assistant.update_llm_run_manifest(
                             run,
                             {
+                                "orchestration": self._failure_orchestration(
+                                    run.context_manifest_json,
+                                    error.code,
+                                ),
                                 "outcome": "failed",
                                 "failure": {
                                     "code": error.code,
@@ -1393,6 +1575,27 @@ class AssistantTurnWorker:
                 )
         finally:
             session.close()
+
+    @staticmethod
+    def _failure_orchestration(
+        manifest: dict[str, Any], error_code: str
+    ) -> dict[str, Any]:
+        stored = manifest.get("orchestration")
+        orchestration = dict(stored) if isinstance(stored, dict) else {}
+        state = orchestration.get("state", AgentState.PLAN.value)
+        transitions = orchestration.get("transitions", [])
+        transitions = list(transitions) if isinstance(transitions, list) else []
+        if state not in {AgentState.COMPLETE.value, AgentState.FAILED.value}:
+            transitions.append(
+                {
+                    "position": len(transitions) + 1,
+                    "from": state,
+                    "to": AgentState.FAILED.value,
+                    "detail": error_code,
+                }
+            )
+            state = AgentState.FAILED.value
+        return {"state": state, "transitions": transitions}
 
     def _persist_trace(self, llm_run_id: str, trace: AgentTrace) -> None:
         session = self.database.session()

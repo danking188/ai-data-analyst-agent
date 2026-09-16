@@ -7,6 +7,7 @@ from app.api.schemas import (
 )
 from app.core.config import get_settings
 from app.llm.provider import FakeLLMProvider, LLMProviderError
+from app.llm.trace_replay import replay_agent_trace
 from app.persistence.repositories.assistant import AssistantRepository
 from app.persistence.repositories.jobs import JobRepository
 from app.persistence.repositories.projects import ProjectRepository
@@ -16,7 +17,9 @@ from app.services.assistant import AssistantService
 from app.workers.assistant import AssistantTurnWorker
 
 
-def _queued_turn(monkeypatch, app_client, question: str) -> tuple[str, str, str]:
+def _queued_turn(
+    monkeypatch, app_client, question: str, *, subject_id: str = "user-a"
+) -> tuple[str, str, str]:
     del app_client
     monkeypatch.setenv("LLM_ENABLED", "true")
     monkeypatch.setenv("LLM_PROVIDER", "fake")
@@ -30,20 +33,20 @@ def _queued_turn(monkeypatch, app_client, question: str) -> tuple[str, str, str]
                 description=None,
                 timezone="Asia/Shanghai",
                 language="zh-CN",
-                subject_id="user-a",
+                subject_id=subject_id,
             )
             service = AssistantService(session, get_settings())
             conversation = service.create_conversation(
                 project.project_id,
                 AssistantConversationCreate(title="Test"),
-                subject_id="user-a",
+                subject_id=subject_id,
                 request_id="test-request",
             )
             turn = service.create_turn(
                 project.project_id,
                 conversation.conversation_id,
                 AssistantMessageCreate(content=question),
-                subject_id="user-a",
+                subject_id=subject_id,
                 request_id="test-request",
             )
             assert turn.job is not None
@@ -52,9 +55,14 @@ def _queued_turn(monkeypatch, app_client, question: str) -> tuple[str, str, str]
         session.close()
 
 
-def test_assistant_worker_completes_project_context_answer(monkeypatch, app_client) -> None:
+def test_assistant_worker_completes_project_context_answer(
+    monkeypatch, app_client, auth_headers
+) -> None:
     project_id, message_id, job_id = _queued_turn(
-        monkeypatch, app_client, "这个项目当前绑定了什么数据？"
+        monkeypatch,
+        app_client,
+        "这个项目当前绑定了什么数据？",
+        subject_id="dev-user",
     )
     provider = FakeLLMProvider(
         [
@@ -104,6 +112,28 @@ def test_assistant_worker_completes_project_context_answer(monkeypatch, app_clie
         assert calls[0].requires_confirmation is False
     finally:
         session.close()
+
+    trace_response = app_client.get(
+        f"/api/v1/projects/{project_id}/assistant/messages/{message_id}/trace",
+        headers=auth_headers,
+    )
+    assert trace_response.status_code == 200, trace_response.text
+    trace = trace_response.json()
+    assert trace["status"] == "succeeded"
+    assert trace["context_manifest"]["orchestration"]["state"] == "complete"
+    assert [call["tool_name"] for call in trace["tool_calls"]] == [
+        "project.get_context"
+    ]
+
+    replay_response = app_client.post(
+        f"/api/v1/projects/{project_id}/assistant/messages/{message_id}/trace/replay",
+        headers=auth_headers,
+    )
+    assert replay_response.status_code == 200, replay_response.text
+    replay = replay_response.json()
+    assert replay["verified"] is True
+    assert replay["replayed_state"] == "complete"
+    assert all(check["passed"] for check in replay["checks"])
 
 
 def test_assistant_worker_refuses_unsafe_request_without_tools(monkeypatch, app_client) -> None:
@@ -431,6 +461,38 @@ class _InvalidThenValidProvider:
         return self.delegate.generate_structured(**kwargs)
 
 
+class _InvalidAnswerThenValidProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.temperatures: list[float] = []
+        self.delegate = FakeLLMProvider(
+            [
+                {
+                    "intent": "inspect_data",
+                    "rationale": "Inspect project context",
+                    "requires_new_computation": False,
+                },
+                {
+                    "summary": "当前会话尚未绑定数据版本。",
+                    "findings": [],
+                    "next_actions": [],
+                    "limitations": ["没有可读取的数据版本"],
+                },
+            ]
+        )
+
+    def generate_structured(self, **kwargs):
+        self.calls += 1
+        self.temperatures.append(float(kwargs["temperature"]))
+        if self.calls == 2:
+            raise LLMProviderError(
+                "LLM_INVALID_RESPONSE",
+                "invalid structured answer",
+                retryable=False,
+            )
+        return self.delegate.generate_structured(**kwargs)
+
+
 def test_assistant_worker_retries_one_invalid_intent_response(monkeypatch, app_client) -> None:
     project_id, message_id, job_id = _queued_turn(monkeypatch, app_client, "检查当前项目")
     provider = _InvalidThenValidProvider()
@@ -452,6 +514,36 @@ def test_assistant_worker_retries_one_invalid_intent_response(monkeypatch, app_c
         assert provider.calls == 3
         assert run is not None
         assert run.context_manifest_json["intent_retry"] == {
+            "attempts": 2,
+            "first_failure_code": "LLM_INVALID_RESPONSE",
+            "retry_temperature": 0,
+        }
+    finally:
+        session.close()
+
+
+def test_assistant_worker_retries_one_invalid_answer_response(monkeypatch, app_client) -> None:
+    project_id, message_id, job_id = _queued_turn(monkeypatch, app_client, "检查当前项目")
+    provider = _InvalidAnswerThenValidProvider()
+    worker = AssistantTurnWorker(
+        get_database(),
+        worker_id="test-assistant-invalid-answer",
+        provider=provider,
+        settings=get_settings(),
+    )
+
+    assert worker.run(job_id) is True
+
+    session = get_database().session()
+    try:
+        repository = AssistantRepository(session)
+        message = repository.get_message(project_id=project_id, message_id=message_id)
+        run = repository.latest_llm_run_for_message(message_id)
+        assert message.status == "completed"
+        assert provider.calls == 3
+        assert provider.temperatures[-1] == 0
+        assert run is not None
+        assert run.context_manifest_json["answer_retry"] == {
             "attempts": 2,
             "first_failure_code": "LLM_INVALID_RESPONSE",
             "retry_temperature": 0,
@@ -483,6 +575,14 @@ def test_assistant_worker_persists_failure_category_in_run_trace(monkeypatch, ap
             "retryable": True,
         }
         assert run.context_manifest_json["failure"]["category"] == "provider"
+        assert run.context_manifest_json["orchestration"]["state"] == "failed"
+        replay = replay_agent_trace(
+            manifest=run.context_manifest_json,
+            run_status=run.status,
+            stored_tool_call_count=run.tool_call_count,
+            tool_statuses=[],
+        )
+        assert replay["verified"] is True
         assert job.error_json is not None
         assert job.error_json["category"] == "provider"
         assert job.project_id == project_id

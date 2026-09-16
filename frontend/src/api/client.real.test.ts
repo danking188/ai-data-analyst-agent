@@ -166,6 +166,43 @@ describe("apiClient real mode contract calls", () => {
     expect(headers.get("Idempotency-Key")).toBeTruthy();
   });
 
+  it("replays assistant traces through the read-only project route", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      trace: {
+        llm_run_id: "llmr_1",
+        message_id: "msg_1",
+        project_id: "prj_1",
+        job_id: "job_1",
+        provider: "aliyun",
+        model: "qwen3.8-flash",
+        prompt_name: "assistant.intent",
+        prompt_version: "1.1.0",
+        status: "succeeded",
+        model_call_count: 2,
+        tool_call_count: 1,
+        input_tokens: 100,
+        output_tokens: 20,
+        latency_ms: 1200,
+        context_manifest: {},
+        error: null,
+        tool_calls: [],
+        created_at: "2026-09-16T00:00:00Z",
+        completed_at: "2026-09-16T00:00:01Z",
+      },
+      verified: true,
+      replayed_state: "complete",
+      checks: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiClient } = await loadRealClient();
+    const replay = await apiClient.replayAssistantTrace("prj_1", "msg_1");
+    expect(replay.verified).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api.test/api/v1/projects/prj_1/assistant/messages/msg_1/trace/replay",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("updates proposed assistant tool arguments through the project route", async () => {
     const fetchMock = vi.fn(async () => Response.json({
       tool_call_id: "tool_1",
