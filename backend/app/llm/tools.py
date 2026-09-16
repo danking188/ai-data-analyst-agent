@@ -142,7 +142,15 @@ class AssistantToolRegistry:
             },
             "dataset_version": self._version_data(version) if version else None,
         }
-        return AssistantToolResult("project.get_context", "1.0.0", data, {})
+        sources = {version.version_id: str(data["dataset_version"])} if version is not None else {}
+        return AssistantToolResult(
+            "project.get_context",
+            "1.0.0",
+            data,
+            sources,
+            "dataset_version" if version is not None else None,
+            version.version_id if version is not None else None,
+        )
 
     def _schema_get(
         self, context: AssistantToolContext, arguments: VersionArguments

@@ -31,6 +31,18 @@ PROMPTS = {
         "inspect_data with requires_new_computation=false. Use plan_analysis only when the user "
         "explicitly requests a new calculation, statistical analysis, or model run.",
     ),
+    ("assistant.intent", "1.1.0"): PromptTemplate(
+        name="assistant.intent",
+        version="1.1.0",
+        system=EVIDENCE_BOUNDARY
+        + "\nRoute questions about existing model names, metrics, errors, feature importance, "
+        "analysis results, distributions, correlations, and significance to evidence retrieval, "
+        "never schema inspection. Route raw columns, row counts, schema, and data-quality state "
+        "to inspect_data. Use a planning intent only for an explicit new run, training request, "
+        "recalculation, cleaning action, or report export. Refuse requests for secrets, arbitrary "
+        "commands or SQL, cross-project data, fabricated evidence, causal overclaiming, or "
+        "bypassing confirmation.",
+    ),
     ("assistant.plan", "1.0.0"): PromptTemplate(
         name="assistant.plan",
         version="1.0.0",

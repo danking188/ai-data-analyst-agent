@@ -5,10 +5,10 @@
 {$DOMAIN} {
 	encode zstd gzip
 	reverse_proxy app:7860 {
-		# The single Uvicorn process closes idle upstream sockets quickly. Avoid
-		# replay-unsafe POST failures when Caddy selects a stale pooled socket.
+		# Keep the proxy idle window below Uvicorn's 75-second keep-alive. Disabling
+		# pooling entirely caused intermittent EOFs while streaming POST bodies.
 		transport http {
-			keepalive off
+			keepalive 30s
 		}
 	}
 

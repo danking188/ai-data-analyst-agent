@@ -22,6 +22,8 @@ def main() -> None:
                 "0.0.0.0",
                 "--port",
                 port,
+                "--timeout-keep-alive",
+                "75",
             ]
         ),
     ]

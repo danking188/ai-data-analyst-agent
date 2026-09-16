@@ -11,6 +11,7 @@ from app.llm.action_schemas import AnalysisSpecDraft, CleaningPlanDraft, Feature
 from app.llm.actions import AssistantActionRegistry
 from app.llm.citations import CitationValidationError, validate_answer_sources
 from app.llm.factory import get_llm_provider
+from app.llm.failures import classify_agent_failure
 from app.llm.orchestrator import AgentState, AgentTrace, ContextCompactor
 from app.llm.policy import AssistantBudget
 from app.llm.prompts import get_prompt
@@ -163,7 +164,7 @@ class AssistantTurnWorker:
                     provider=self.settings.llm_provider,
                     model=self.settings.llm_model or "",
                     prompt_name="assistant.intent",
-                    prompt_version="1.0.0",
+                    prompt_version="1.1.0",
                     context_manifest=context_manifest,
                 )
                 uow.jobs.heartbeat(
@@ -196,10 +197,70 @@ class AssistantTurnWorker:
         self._active_budget = budget
         self._active_run_id = run_id
         budget.require_model_capacity()
-        intent_response = self._generate_intent(question, history_payload)
+        try:
+            intent_response = self._generate_intent(question, history_payload)
+        except LLMProviderError as exc:
+            if exc.code != "LLM_INVALID_RESPONSE":
+                raise
+            self._update_trace_metadata(
+                run_id,
+                {
+                    "intent_retry": {
+                        "attempts": 2,
+                        "first_failure_code": exc.code,
+                        "retry_temperature": 0,
+                    }
+                },
+            )
+            intent_response = self._generate_intent(
+                question,
+                history_payload,
+                temperature=0,
+            )
         self._record_response(budget, intent_response)
         self._ensure_active(job_id, run_id, budget)
         intent = intent_response.content
+        self._update_trace_metadata(
+            run_id,
+            {
+                "decision": {
+                    "intent": intent.intent,
+                    "requires_new_computation": intent.requires_new_computation,
+                }
+            },
+        )
+
+        if intent.intent == "refuse":
+            trace.move(AgentState.EXECUTE, detail="deterministic_policy_refusal")
+            trace.move(AgentState.CHECK, detail="no_tools_or_secrets_exposed")
+            trace.move(AgentState.SUMMARIZE, detail="persist_policy_refusal")
+            trace.move(AgentState.COMPLETE)
+            self._update_trace_metadata(
+                run_id,
+                {
+                    "policy_decision": {
+                        "outcome": "refused",
+                        "write_tool_count": 0,
+                        "all_writes_require_confirmation": True,
+                    }
+                },
+            )
+            self._persist_trace(run_id, trace)
+            self._persist_answer(
+                job_id,
+                run_id,
+                AssistantAnswer(
+                    summary="无法执行该请求，因为它超出了当前项目的安全与证据边界。",
+                    findings=[],
+                    next_actions=[],
+                    limitations=[
+                        "不会读取或泄露凭证、执行任意命令、跨项目访问数据、伪造证据，"
+                        "也不会绕过人工确认。"
+                    ],
+                ),
+                budget,
+            )
+            return
 
         if intent.requires_new_computation or intent.intent in {
             "plan_analysis",
@@ -259,10 +320,12 @@ class AssistantTurnWorker:
             for source_id, source in result.citation_sources.items()
         }
         trace.move(AgentState.CHECK, detail="citation_validation")
+        validation = {"citation": "passed", "correction_attempted": False, "fallback": False}
         try:
             validate_answer_sources(answer_response.content, sources)
             answer = answer_response.content
         except CitationValidationError:
+            validation["correction_attempted"] = True
             budget.require_model_capacity()
             correction_response = self._generate_answer_correction(
                 question=question,
@@ -274,8 +337,13 @@ class AssistantTurnWorker:
                 validate_answer_sources(correction_response.content, sources)
                 answer = correction_response.content
             except CitationValidationError:
-                answer = self._deterministic_evidence_fallback(tool_results)
+                validation["fallback"] = True
+                answer = self._deterministic_evidence_fallback(
+                    tool_results,
+                    question=question,
+                )
                 validate_answer_sources(answer, sources)
+        self._update_trace_metadata(run_id, {"validation": validation})
         trace.move(AgentState.SUMMARIZE, detail="persist_grounded_answer")
         trace.move(AgentState.COMPLETE)
         self._persist_trace(run_id, trace)
@@ -428,9 +496,13 @@ class AssistantTurnWorker:
         self._persist_answer(job_id, run_id, answer, budget)
 
     def _generate_intent(
-        self, question: str, history_payload: list[dict[str, str]]
+        self,
+        question: str,
+        history_payload: list[dict[str, str]],
+        *,
+        temperature: float | None = None,
     ) -> LLMResponse[AssistantIntent]:
-        prompt = get_prompt("assistant.intent", "1.0.0")
+        prompt = get_prompt("assistant.intent", "1.1.0")
         return self._provider().generate_structured(
             messages=[
                 LLMMessage(role="system", content=prompt.system),
@@ -442,12 +514,19 @@ class AssistantTurnWorker:
                             "question": question,
                             "recent_conversation": history_payload,
                             "decision_rules": [
-                                "Questions about existing columns, schema, project context, or "
-                                "quality results are inspect_data and do not require new "
-                                "computation.",
-                                "Use plan_analysis only for an explicit new EDA, statistical test, "
-                                "or model run.",
-                                "Inspection never implies model training.",
+                                "Existing model names, metrics, errors, feature importance, and "
+                                "model explanations are explain_model with no new computation.",
+                                "Existing analysis results, distributions, correlations, "
+                                "effects, and significance are answer_from_evidence with no "
+                                "new computation.",
+                                "Raw columns, row counts, schema, project context, and current "
+                                "data-quality state are inspect_data with no new computation.",
+                                "Use a planning intent only for an explicit new run, training, "
+                                "recalculation, cleaning action, feature proposal, or report "
+                                "export.",
+                                "Secrets, arbitrary shell or SQL, cross-project access, fabricated "
+                                "citations or metrics, causal overclaims, and confirmation "
+                                "bypasses must be refuse with no new computation.",
                             ],
                         }
                     ),
@@ -455,7 +534,7 @@ class AssistantTurnWorker:
             ],
             response_schema=AssistantIntent,
             model=self.settings.llm_model or "",
-            temperature=self.settings.llm_temperature,
+            temperature=self.settings.llm_temperature if temperature is None else temperature,
             timeout_seconds=self.settings.llm_timeout_seconds,
             max_output_tokens=min(self.settings.llm_max_output_tokens, 1000),
         )
@@ -551,8 +630,8 @@ class AssistantTurnWorker:
                             "tool_results": [
                                 {
                                     "tool": result.tool_name,
-                                    "data": result.data,
-                                    "citation_ids": sorted(result.citation_sources),
+                                    "data": self._tool_prompt_data(result),
+                                    "citation_ids": self._tool_prompt_citation_ids(result),
                                 }
                                 for result in tool_results
                             ],
@@ -592,8 +671,8 @@ class AssistantTurnWorker:
                             "tool_results": [
                                 {
                                     "tool": result.tool_name,
-                                    "data": result.data,
-                                    "citation_ids": sorted(result.citation_sources),
+                                    "data": self._tool_prompt_data(result),
+                                    "citation_ids": self._tool_prompt_citation_ids(result),
                                 }
                                 for result in tool_results
                             ],
@@ -667,11 +746,41 @@ class AssistantTurnWorker:
     @staticmethod
     def _deterministic_evidence_fallback(
         tool_results: list[AssistantToolResult],
+        *,
+        question: str = "",
     ) -> AssistantAnswer:
         findings: list[AssistantFinding] = []
         limitations = ["模型生成的叙述未通过证据校验，本回答已降级为确定性工具摘要。"]
+        lowered_question = question.lower()
+        asks_model = any(
+            marker in lowered_question
+            for marker in ("模型", "model", "ridge", "logistic", "回归", "分类")
+        )
+        asks_distribution = any(
+            marker in lowered_question
+            for marker in ("分布", "均衡", "类别", "distribution", "imbalance", "class")
+        )
         for result in tool_results:
-            if result.tool_name == "schema.get":
+            if result.tool_name == "project.get_context":
+                version = result.data.get("dataset_version")
+                if isinstance(version, dict):
+                    source_id = str(version.get("version_id", ""))
+                    row_count = version.get("row_count")
+                    column_count = version.get("column_count")
+                    if (
+                        source_id in result.citation_sources
+                        and isinstance(row_count, int)
+                        and isinstance(column_count, int)
+                    ):
+                        findings.append(
+                            AssistantFinding(
+                                text=(f"当前数据版本包含 {row_count} 行、{column_count} 列。"),
+                                claim_level=1,
+                                citation_ids=[source_id],
+                                limitations=[],
+                            )
+                        )
+            elif result.tool_name == "schema.get":
                 for column in result.data.get("columns", [])[:20]:
                     if not isinstance(column, dict):
                         continue
@@ -707,8 +816,80 @@ class AssistantTurnWorker:
                                 limitations=[],
                             )
                         )
+            elif result.tool_name == "artifact.search":
+                for artifact in result.data.get("artifacts", []):
+                    if not isinstance(artifact, dict):
+                        continue
+                    source_id = str(artifact.get("artifact_id", ""))
+                    payload = artifact.get("result")
+                    if source_id not in result.citation_sources or not isinstance(payload, dict):
+                        continue
+                    if asks_model and artifact.get("type") == "model":
+                        model_family = payload.get("model_family")
+                        task = payload.get("task")
+                        if isinstance(model_family, str) and model_family:
+                            task_text = f"，任务类型为 `{task}`" if isinstance(task, str) else ""
+                            findings.append(
+                                AssistantFinding(
+                                    text=f"模型卡记录的入选模型为 `{model_family}`{task_text}。",
+                                    claim_level=3,
+                                    citation_ids=[source_id],
+                                    limitations=["该结论仅适用于当前数据版本和运行。"],
+                                )
+                            )
+                            break
+                    if asks_distribution and artifact.get("type") == "comparison":
+                        diagnostics = payload.get("target_diagnostics")
+                        distribution = (
+                            diagnostics.get("distribution")
+                            if isinstance(diagnostics, dict)
+                            else None
+                        )
+                        if not isinstance(distribution, list):
+                            continue
+                        for item in distribution[:10]:
+                            if not isinstance(item, dict):
+                                continue
+                            label = item.get("class")
+                            count = item.get("count")
+                            rate = item.get("rate")
+                            if (
+                                label is None
+                                or not isinstance(count, int)
+                                or not isinstance(rate, (int, float))
+                            ):
+                                continue
+                            findings.append(
+                                AssistantFinding(
+                                    text=f"目标类别 `{label}` 包含 {count} 条记录，占比为 {rate}。",
+                                    claim_level=1,
+                                    citation_ids=[source_id],
+                                    limitations=[],
+                                )
+                            )
+                        if findings:
+                            break
+            elif result.tool_name == "claim.search" and not findings:
+                for claim in result.data.get("claims", [])[:10]:
+                    if not isinstance(claim, dict):
+                        continue
+                    source_id = str(claim.get("claim_id", ""))
+                    text = claim.get("text")
+                    if source_id in result.citation_sources and isinstance(text, str) and text:
+                        findings.append(
+                            AssistantFinding(
+                                text=text,
+                                claim_level=int(claim.get("level", 1)),
+                                citation_ids=[source_id],
+                                limitations=[str(value) for value in claim.get("limitations", [])],
+                            )
+                        )
         return AssistantAnswer(
-            summary="已读取当前数据版本的 Schema 和质量证据，并返回可核验摘要。",
+            summary=(
+                "以下内容由已持久化证据确定性生成，可通过引用追溯。"
+                if findings
+                else "当前工具结果中没有足够证据回答该问题。"
+            ),
             findings=findings,
             next_actions=[],
             limitations=limitations,
@@ -910,6 +1091,17 @@ class AssistantTurnWorker:
                     output_tokens=budget.output_tokens,
                     latency_ms=budget.latency_ms,
                 )
+                uow.assistant.update_llm_run_manifest(
+                    run,
+                    {
+                        "policy_decision": {
+                            "outcome": "awaiting_confirmation",
+                            "write_tool_count": len(plan.steps),
+                            "all_writes_require_confirmation": True,
+                        },
+                        "outcome": "blocked_for_confirmation",
+                    },
+                )
                 uow.jobs.transition(
                     job,
                     status="blocked",
@@ -985,7 +1177,11 @@ class AssistantTurnWorker:
                     uow.assistant.finish_tool_call(
                         call,
                         status="failed",
-                        error={"code": code, "retryable": getattr(error, "retryable", False)},
+                        error={
+                            "code": code,
+                            "category": classify_agent_failure(code).value,
+                            "retryable": getattr(error, "retryable", False),
+                        },
                     )
         finally:
             session.close()
@@ -1031,6 +1227,16 @@ class AssistantTurnWorker:
                     input_tokens=budget.input_tokens,
                     output_tokens=budget.output_tokens,
                     latency_ms=budget.latency_ms,
+                )
+                uow.assistant.update_llm_run_manifest(
+                    run,
+                    {
+                        "outcome": "succeeded",
+                        "result": {
+                            "finding_count": len(answer.findings),
+                            "limitation_count": len(answer.limitations),
+                        },
+                    },
                 )
                 uow.jobs.transition(
                     job,
@@ -1102,6 +1308,7 @@ class AssistantTurnWorker:
             session.close()
 
     def _fail(self, job_id: str, error: DomainError) -> None:
+        category = classify_agent_failure(error.code).value
         session = self.database.session()
         try:
             with UnitOfWork(session) as uow:
@@ -1130,7 +1337,22 @@ class AssistantTurnWorker:
                             input_tokens=budget.input_tokens if budget else run.input_tokens,
                             output_tokens=budget.output_tokens if budget else run.output_tokens,
                             latency_ms=budget.latency_ms if budget else run.latency_ms,
-                            error={"code": error.code, "retryable": error.retryable},
+                            error={
+                                "code": error.code,
+                                "category": category,
+                                "retryable": error.retryable,
+                            },
+                        )
+                        uow.assistant.update_llm_run_manifest(
+                            run,
+                            {
+                                "outcome": "failed",
+                                "failure": {
+                                    "code": error.code,
+                                    "category": category,
+                                    "retryable": error.retryable,
+                                },
+                            },
                         )
                 if job.status == "queued":
                     job.status = "running"
@@ -1140,6 +1362,7 @@ class AssistantTurnWorker:
                         status="failed",
                         error={
                             "code": error.code,
+                            "category": category,
                             "message": error.message,
                             "request_id": f"job:{job_id}",
                             "retryable": error.retryable,
@@ -1164,6 +1387,7 @@ class AssistantTurnWorker:
                         "job_id": job_id,
                         "message_id": message_id or None,
                         "error_code": error.code,
+                        "failure_category": category,
                         "retryable": error.retryable,
                     },
                 )
@@ -1209,13 +1433,45 @@ class AssistantTurnWorker:
         finally:
             session.close()
 
-    @staticmethod
-    def _record_response(budget: AssistantBudget, response: LLMResponse[Any]) -> None:
+    def _record_response(self, budget: AssistantBudget, response: LLMResponse[Any]) -> None:
         budget.record_model_call(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             latency_ms=response.latency_ms,
         )
+        if self._active_run_id:
+            self._append_model_call_trace(self._active_run_id, response)
+
+    def _append_model_call_trace(self, llm_run_id: str, response: LLMResponse[Any]) -> None:
+        session = self.database.session()
+        try:
+            with UnitOfWork(session) as uow:
+                run = uow.assistant.get_llm_run(llm_run_id)
+                calls = list(run.context_manifest_json.get("model_calls", []))
+                calls.append(
+                    {
+                        "position": len(calls) + 1,
+                        "provider": response.provider,
+                        "model": response.model,
+                        "request_id": response.request_id,
+                        "finish_reason": response.finish_reason,
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "latency_ms": response.latency_ms,
+                    }
+                )
+                uow.assistant.update_llm_run_manifest(run, {"model_calls": calls})
+        finally:
+            session.close()
+
+    def _update_trace_metadata(self, llm_run_id: str, values: dict[str, Any]) -> None:
+        session = self.database.session()
+        try:
+            with UnitOfWork(session) as uow:
+                run = uow.assistant.get_llm_run(llm_run_id)
+                uow.assistant.update_llm_run_manifest(run, values)
+        finally:
+            session.close()
 
     @staticmethod
     def _tools_for_intent(intent: str, version_id: str | None) -> list[str]:
@@ -1241,6 +1497,69 @@ class AssistantTurnWorker:
                 409,
             )
         return encoded
+
+    @classmethod
+    def _tool_prompt_data(cls, result: AssistantToolResult) -> dict[str, Any]:
+        """Project persisted evidence into a bounded, question-answering payload.
+
+        Full tool results remain stored for trace replay and citation validation. The model only
+        receives fields needed to explain the evidence, avoiding repeated chart/table payloads
+        exhausting the per-turn token budget.
+        """
+        if result.tool_name != "artifact.search":
+            compacted = cls._compact_prompt_value(result.data)
+            return compacted if isinstance(compacted, dict) else {}
+        artifacts: list[dict[str, Any]] = []
+        for item in result.data.get("artifacts", []):
+            if not isinstance(item, dict) or item.get("type") not in {
+                "metric",
+                "model",
+                "comparison",
+                "log",
+            }:
+                continue
+            artifact = {
+                key: item.get(key)
+                for key in (
+                    "artifact_id",
+                    "run_id",
+                    "dataset_version_id",
+                    "type",
+                    "name",
+                    "producer",
+                )
+            }
+            artifact["result"] = cls._compact_prompt_value(item.get("result", {}))
+            artifacts.append(artifact)
+            if len(artifacts) >= 8:
+                break
+        return {"artifacts": artifacts}
+
+    @classmethod
+    def _tool_prompt_citation_ids(cls, result: AssistantToolResult) -> list[str]:
+        if result.tool_name != "artifact.search":
+            return sorted(result.citation_sources)
+        data = cls._tool_prompt_data(result)
+        return [
+            str(item["artifact_id"])
+            for item in data.get("artifacts", [])
+            if isinstance(item, dict) and item.get("artifact_id")
+        ]
+
+    @classmethod
+    def _compact_prompt_value(cls, value: Any, *, depth: int = 0) -> Any:
+        if depth >= 5:
+            return str(value)[:500]
+        if isinstance(value, dict):
+            return {
+                str(key): cls._compact_prompt_value(item, depth=depth + 1)
+                for key, item in list(value.items())[:40]
+            }
+        if isinstance(value, list):
+            return [cls._compact_prompt_value(item, depth=depth + 1) for item in value[:8]]
+        if isinstance(value, str):
+            return value[:1000]
+        return value
 
     @staticmethod
     def _history_payload(rows: list[AssistantMessageRow]) -> list[dict[str, str]]:

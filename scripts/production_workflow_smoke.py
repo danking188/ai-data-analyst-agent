@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import http.cookies
+import http.client
 import json
 import os
 import time
@@ -118,27 +119,116 @@ class ApiClient:
             request_headers["Content-Type"] = content_type
         if headers:
             request_headers.update(headers)
-        request = urllib.request.Request(url, data=body, method=method, headers=request_headers)
-        try:
-            with URL_OPENER.open(request, timeout=self.timeout_seconds) as response:
+        retryable_request = (
+            method in {"GET", "HEAD", "OPTIONS"}
+            or "Idempotency-Key" in request_headers
+            or path == "/auth/login"
+        )
+        attempts = 4 if retryable_request else 1
+        raw = b""
+        for attempt in range(attempts):
+            try:
+                raw = self._send(method, url, body, request_headers)
+                break
+            except ApiResponseError as exc:
+                if exc.status in {502, 503, 504} and attempt + 1 < attempts:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                raise RuntimeError(
+                    f"{method} {path} failed with HTTP {exc.status}: {exc.detail}"
+                ) from exc
+            except (OSError, http.client.HTTPException) as exc:
+                if attempt + 1 < attempts:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                raise RuntimeError(f"{method} {path} transport failed: {exc}") from exc
+        if not expect_json:
+            return raw
+        return json.loads(raw) if raw else None
+
+    def _send(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        headers: dict[str, str],
+    ) -> bytes:
+        current_url = url
+        current_method = method
+        current_body = body
+        current_headers = dict(headers)
+        for _ in range(6):
+            parsed = validate_url(current_url)
+            connection_type = (
+                http.client.HTTPSConnection
+                if parsed.scheme == "https"
+                else http.client.HTTPConnection
+            )
+            connection = connection_type(
+                parsed.hostname,
+                parsed.port,
+                timeout=self.timeout_seconds,
+            )
+            target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+            try:
+                connection.request(
+                    current_method,
+                    target,
+                    body=current_body,
+                    headers=current_headers,
+                )
+                response = connection.getresponse()
                 raw = response.read()
-                for raw_cookie in response.headers.get_all("Set-Cookie", []):
+                response_headers = response.headers
+                for raw_cookie in response_headers.get_all("Set-Cookie", []):
+                    if origin_identity(current_url) != self.origin_identity:
+                        continue
                     parsed_cookie = http.cookies.SimpleCookie()
                     parsed_cookie.load(raw_cookie)
                     self.cookies.update(
                         {name: morsel.value for name, morsel in parsed_cookie.items()}
                     )
-        except urllib.error.HTTPError as exc:
-            detail = exc.read(2048).decode(errors="replace")
-            raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {detail}") from exc
-        if not expect_json:
-            return raw
-        return json.loads(raw) if raw else None
+                if response.status in {301, 302, 303, 307, 308}:
+                    location = response_headers.get("Location")
+                    if not location:
+                        raise ApiResponseError(response.status, "redirect has no Location header")
+                    next_url = urllib.parse.urljoin(current_url, location)
+                    validate_url(next_url)
+                    if origin_identity(current_url) != origin_identity(next_url):
+                        sensitive = {header.lower() for header in SENSITIVE_REDIRECT_HEADERS}
+                        current_headers = {
+                            name: value
+                            for name, value in current_headers.items()
+                            if name.lower() not in sensitive
+                        }
+                    if response.status == 303 or (
+                        response.status in {301, 302} and current_method == "POST"
+                    ):
+                        current_method = "GET"
+                        current_body = None
+                        current_headers.pop("Content-Type", None)
+                    current_url = next_url
+                    continue
+                if response.status >= 400:
+                    raise ApiResponseError(
+                        response.status, raw[:2048].decode(errors="replace")
+                    )
+                return raw
+            finally:
+                connection.close()
+        raise ApiResponseError(508, "too many redirects")
 
     def login(self, username: str, password: str) -> None:
         self.request("POST", "/auth/login", payload={"username": username, "password": password})
         if "datatrace_session" not in self.cookies:
             raise RuntimeError("login did not return the expected session cookie")
+
+
+class ApiResponseError(Exception):
+    def __init__(self, status: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
 
 
 def multipart_upload(filename: str, content: bytes, dataset_name: str) -> tuple[bytes, str]:

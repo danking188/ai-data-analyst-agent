@@ -5,11 +5,13 @@ quality, cleaning, analysis, modeling, evidence, and export paths.
 
 ## Preconditions
 
-1. Run `backend/scripts/evaluate_llm_release.py`; `docs/quality/LLM_RELEASE_GATE.json` must report
-   `status=passed` and 50 or more cases.
+1. Run `backend/scripts/evaluate_llm_release.py --check`; the offline controls must pass. Then run
+   the same script with `--live-url --project-id --dataset-map --full`; the resulting
+   `docs/quality/AGENT_EVAL_LIVE.json` must pass. See `docs/quality/AGENT_EVALUATION.md`.
 2. Complete backend Ruff, mypy, pytest, frontend typecheck, Vitest, build, and OpenAPI validation.
 3. Confirm PostgreSQL and S3 readiness at `GET /api/v1/health/ready`.
-4. Store the provider key only in ModelScope secret management.
+4. Store the provider key only in platform secret management, or in the Aliyun Lite deployment
+   environment file with mode `0600`; never commit it to the repository.
 
 ## Canary Secrets
 

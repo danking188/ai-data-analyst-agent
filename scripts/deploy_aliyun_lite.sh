@@ -47,6 +47,9 @@ install -d -m 0750 "${data_dir:-/opt/datatrace/data}" "${backup_dir:-/opt/datatr
 docker compose --env-file "${env_file}" -f "${compose_file}" config --quiet
 docker compose --env-file "${env_file}" -f "${compose_file}" build
 docker compose --env-file "${env_file}" -f "${compose_file}" up -d --remove-orphans
+# Caddy runs with its admin API disabled, so a restart is required to load a changed bind-mounted
+# Caddyfile. Existing TLS state remains in the named volume.
+docker compose --env-file "${env_file}" -f "${compose_file}" restart caddy
 docker compose --env-file "${env_file}" -f "${compose_file}" ps
 systemctl start datatrace-backup.service
 
