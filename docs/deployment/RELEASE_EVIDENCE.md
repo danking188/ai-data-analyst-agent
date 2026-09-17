@@ -4,20 +4,20 @@ This file defines the evidence that must be attached to every production release
 results are useful preflight evidence, but they do not replace immutable registry digests or the
 environment sign-off in `PRODUCTION_READINESS.md`.
 
-## Aliyun Agent release and source sync (2026-09-15)
+## Aliyun Agent release and source sync (2026-09-17)
 
 Public website: [DataTrace](https://8.222.221.236.sslip.io/).
 Public self-registration and account isolation remain enabled. A new account completed automatic
 login, private-project isolation, logout/relogin, upload, quality scan, real model training and HTML
 report download. The workflow produced 10 artifacts and 2 validated claims.
 
-The Alibaba Cloud Model Studio OpenAI-compatible provider is enabled with `qwen3.8-flash`. The live
+The DeepSeek OpenAI-compatible provider is enabled with `deepseek-flash`. The live
 Agent acceptance completed an AI evidence narrative, a cited read-only turn and a new-analysis turn
 that stopped before confirmation, then ran its approved AnalysisSpec and model job. All 3 Agent turns
-and all 5 tool calls succeeded. Defensive correction now covers evidence-number formatting, invalid
+and all 6 tool calls succeeded. Defensive correction now covers evidence-number formatting, invalid
 plans and the model placing its target in `excluded_columns` without weakening deterministic validators.
 
-Local checks passed 154 backend and 33 frontend tests, 83% backend coverage, Ruff, strict Mypy,
+Local checks passed 201 backend and 37 frontend tests, 83.32% backend coverage, Ruff, strict Mypy,
 TypeScript, OpenAPI and the production build. The server-side 500-request/concurrency-8 read probe
 had zero failures, 50.612 RPS and P95 228.934 ms. Playwright passed desktop and 390px registration,
 project creation, upload, real Agent read turn and responsive navigation with no page error or HTTP 5xx.

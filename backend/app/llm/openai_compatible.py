@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from typing import Any, Literal, cast
@@ -15,6 +16,7 @@ from app.llm.provider import (
 )
 
 StructuredOutputMode = Literal["json_schema", "json_object", "prompt"]
+ThinkingMode = Literal["enabled", "disabled"]
 
 
 class OpenAICompatibleProvider:
@@ -25,6 +27,7 @@ class OpenAICompatibleProvider:
         api_key: str,
         structured_output_mode: StructuredOutputMode = "json_schema",
         enable_thinking: bool | None = None,
+        thinking_mode: ThinkingMode | None = None,
         max_retries: int = 2,
         client: httpx.Client | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -39,6 +42,7 @@ class OpenAICompatibleProvider:
         self._api_key = api_key
         self._structured_output_mode = structured_output_mode
         self._enable_thinking = enable_thinking
+        self._thinking_mode = thinking_mode
         self._max_retries = max_retries
         self._client = client or httpx.Client()
         self._owns_client = client is None
@@ -88,19 +92,27 @@ class OpenAICompatibleProvider:
     ) -> dict[str, Any]:
         serialized_messages = [message.model_dump(exclude_none=True) for message in messages]
         schema = response_schema.model_json_schema()
+        schema_instruction = (
+            "Return only one JSON object matching this JSON Schema. "
+            "Do not wrap it in Markdown: "
+            + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+        )
         if self._structured_output_mode == "prompt":
             serialized_messages.insert(
                 0,
                 {
                     "role": "system",
-                    "content": (
-                        "Return only one JSON object matching this JSON Schema. "
-                        f"Do not wrap it in Markdown: {schema}"
-                    ),
+                    "content": schema_instruction,
                 },
             )
             response_format: dict[str, Any] | None = None
         elif self._structured_output_mode == "json_object":
+            # Providers such as DeepSeek reject json_object requests unless the prompt
+            # explicitly asks for JSON. Including the schema also keeps validation repairable.
+            serialized_messages.insert(
+                0,
+                {"role": "system", "content": schema_instruction},
+            )
             response_format = {"type": "json_object"}
         else:
             response_format = {
@@ -121,6 +133,8 @@ class OpenAICompatibleProvider:
             payload["response_format"] = response_format
         if self._enable_thinking is not None:
             payload["enable_thinking"] = self._enable_thinking
+        if self._thinking_mode is not None:
+            payload["thinking"] = {"type": self._thinking_mode}
         return payload
 
     def _post_with_retry(

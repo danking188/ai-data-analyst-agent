@@ -1,12 +1,12 @@
 # Production Deployment Guide
 
-## Current public deployment (2026-09-15)
+## Current public deployment (2026-09-17)
 
 [DataTrace](https://8.222.221.236.sslip.io/) is running on an Aliyun Singapore lightweight
-server. Self-registration and the Qwen-backed Agent are enabled. The current pilot uses Caddy, a single application container,
+server. Self-registration and the DeepSeek-backed Agent are enabled. The current pilot uses Caddy, a single application container,
 SQLite and persistent host files; it does not use the separated PostgreSQL/S3 topology below.
 Public readiness, registration, upload-to-report, real Agent plan/confirm/execute, desktop/mobile
-browser flow and 500-request acceptance were rerun on 2026-09-15. Reboot recovery was completed
+browser flow and 500-request acceptance were rerun through 2026-09-17. Reboot recovery was completed
 on 2026-09-11.
 See [target evidence](../quality/SMALL_TRAFFIC_ACCEPTANCE.md) and
 [Aliyun operations](./ALIYUN_LIGHTWEIGHT.md). The pilot decision is `CONDITIONAL GO`;

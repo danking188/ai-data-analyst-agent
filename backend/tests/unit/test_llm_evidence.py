@@ -128,6 +128,34 @@ def test_summary_number_must_be_established_by_a_finding() -> None:
         validate_evidence_answer(answer, evidence_context())
 
 
+@pytest.mark.parametrize(
+    "disclaimer",
+    [
+        "该重要性只描述预测贡献，不代表因果关系。",
+        "分析明确不允许因果解释。",
+        "The observed association does not establish a causal relationship.",
+    ],
+)
+def test_causal_disclaimer_is_allowed(disclaimer: str) -> None:
+    answer = valid_answer()
+    finding = answer.findings[0].model_copy(update={"text": f"保留集准确率为 0.8123。{disclaimer}"})
+    changed = answer.model_copy(update={"summary": disclaimer, "findings": [finding]})
+
+    validate_evidence_answer(changed, evidence_context())
+
+
+def test_disclaimer_does_not_hide_a_separate_causal_claim() -> None:
+    answer = valid_answer()
+    finding = answer.findings[0].model_copy(
+        update={"text": "该结果不代表因果关系，但该特征导致准确率达到 0.8123。"}
+    )
+
+    with pytest.raises(CitationValidationError, match="causal language"):
+        validate_evidence_answer(
+            answer.model_copy(update={"findings": [finding]}), evidence_context()
+        )
+
+
 def test_narrative_generation_validates_fake_provider_output() -> None:
     provider = FakeLLMProvider([valid_answer().model_dump(mode="json")])
 

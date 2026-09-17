@@ -7,7 +7,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from app.llm.factory import get_llm_provider
-from app.llm.openai_compatible import OpenAICompatibleProvider
+from app.llm.openai_compatible import OpenAICompatibleProvider, StructuredOutputMode, ThinkingMode
 from app.llm.provider import FakeLLMProvider, LLMMessage, LLMProviderError
 
 
@@ -26,12 +26,16 @@ def provider_with_handler(
     max_retries: int = 0,
     sleeps: list[float] | None = None,
     enable_thinking: bool | None = None,
+    thinking_mode: ThinkingMode | None = None,
+    structured_output_mode: StructuredOutputMode = "json_schema",
 ) -> OpenAICompatibleProvider:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     return OpenAICompatibleProvider(
         api_base="https://provider.example/v1",
         api_key="private-key",
+        structured_output_mode=structured_output_mode,
         enable_thinking=enable_thinking,
+        thinking_mode=thinking_mode,
         max_retries=max_retries,
         client=client,
         sleep=(sleeps.append if sleeps is not None else lambda _: None),
@@ -164,6 +168,35 @@ def test_provider_only_sends_thinking_control_when_explicitly_configured() -> No
 
     payload = json.loads(requests[0].content)
     assert payload["enable_thinking"] is False
+
+
+def test_provider_sends_deepseek_thinking_mode_when_configured() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return success_response()
+
+    generate(provider_with_handler(handler, thinking_mode="disabled"))
+
+    payload = json.loads(requests[0].content)
+    assert payload["thinking"] == {"type": "disabled"}
+
+
+def test_json_object_mode_includes_explicit_json_schema_instruction() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return success_response()
+
+    generate(provider_with_handler(handler, structured_output_mode="json_object"))
+
+    payload = json.loads(requests[0].content)
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["messages"][0]["role"] == "system"
+    assert "JSON Schema" in payload["messages"][0]["content"]
+    assert '"answer"' in payload["messages"][0]["content"]
 
 
 @pytest.mark.parametrize(

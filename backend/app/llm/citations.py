@@ -12,6 +12,13 @@ CAUSAL_PATTERN = re.compile(
     r"(?:导致|造成|引起|因果|驱动了|cause[ds]?|causal|result(?:s|ed)? in)",
     re.IGNORECASE,
 )
+CAUSAL_DISCLAIMER_PATTERN = re.compile(
+    r"(?:不(?:代表|构成|允许|支持|证明|表明|意味着)|不能(?:证明|推断|解释)|无法(?:证明|推断|解释)|未(?:证明|建立|发现))"
+    r"[^，,。：:；;.!?]{0,16}(?:因果|导致|造成|引起|驱动)"
+    r"|(?:does not|do not|cannot|can't|must not|no evidence (?:of|for)|not permitted)"
+    r"[^,.;!?]{0,40}(?:cause[ds]?|causal|result(?:s|ed)? in)",
+    re.IGNORECASE,
+)
 
 
 class CitationValidationError(ValueError):
@@ -48,7 +55,7 @@ def validate_evidence_answer(answer: AssistantAnswer, context: EvidenceContext) 
             )
         else:
             validated_finding_numbers.update(finding_numbers)
-        if not context.causal_interpretation_allowed and CAUSAL_PATTERN.search(finding.text):
+        if not context.causal_interpretation_allowed and _uses_causal_language(finding.text):
             messages.append(f"finding {index} uses causal language without permission")
 
     summary_numbers = _normalized_numbers(answer.summary)
@@ -58,7 +65,7 @@ def validate_evidence_answer(answer: AssistantAnswer, context: EvidenceContext) 
             "summary contains numbers not established by a cited finding: "
             + ", ".join(unsupported_summary)
         )
-    if not context.causal_interpretation_allowed and CAUSAL_PATTERN.search(answer.summary):
+    if not context.causal_interpretation_allowed and _uses_causal_language(answer.summary):
         messages.append("summary uses causal language without permission")
     if messages:
         raise CitationValidationError(messages)
@@ -94,7 +101,7 @@ def validate_answer_sources(
             )
         else:
             validated_finding_numbers.update(finding_numbers)
-        if not causal_interpretation_allowed and CAUSAL_PATTERN.search(finding.text):
+        if not causal_interpretation_allowed and _uses_causal_language(finding.text):
             messages.append(f"finding {index} uses causal language without permission")
     unsupported_summary = sorted(_normalized_numbers(answer.summary) - validated_finding_numbers)
     if unsupported_summary:
@@ -102,7 +109,7 @@ def validate_answer_sources(
             "summary contains numbers not established by a cited finding: "
             + ", ".join(unsupported_summary)
         )
-    if not causal_interpretation_allowed and CAUSAL_PATTERN.search(answer.summary):
+    if not causal_interpretation_allowed and _uses_causal_language(answer.summary):
         messages.append("summary uses causal language without permission")
     if messages:
         raise CitationValidationError(messages)
@@ -110,6 +117,11 @@ def validate_answer_sources(
 
 def _normalized_numbers(text: str) -> set[str]:
     return {_normalize_number(token) for token in NUMBER_PATTERN.findall(text)}
+
+
+def _uses_causal_language(text: str) -> bool:
+    without_disclaimers = CAUSAL_DISCLAIMER_PATTERN.sub("", text)
+    return CAUSAL_PATTERN.search(without_disclaimers) is not None
 
 
 def _normalize_number(token: str) -> str:

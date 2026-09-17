@@ -63,29 +63,28 @@ python3 scripts/configure_aliyun_lite_env.py --enable-registration 你的域名
 已有部署不要重复运行配置生成器：它会覆盖 `.env` 并重新生成 JWT 密钥与初始密码。
 已有用户的数据库密码不会随之更新；调整注册开关时只修改现有配置中的对应变量并重新部署。
 
-### 启用真实 Agent（阿里云百炼）
+### 启用真实 Agent（DeepSeek）
 
-服务器位于新加坡不代表百炼 API Key 也必须创建在新加坡；关键是 API Key 与 Base URL 必须
-来自同一地域。对于百炼 OpenAI 兼容接口，建议使用项目专用 Key，并将以下配置写入仅 root
-可读的 `.env`：
+建议使用项目专用 Key，并将以下配置写入仅 root 可读的 `.env`：
 
 ```dotenv
 LLM_ENABLED=true
 LLM_PROVIDER=openai_compatible
-LLM_API_BASE=https://你的业务空间ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+LLM_API_BASE=https://api.deepseek.com
 LLM_API_KEY=你的项目专用密钥
-LLM_MODEL=qwen3.8-flash
+LLM_MODEL=deepseek-flash
+LLM_REPLAY_ALLOWED_MODELS=deepseek-flash
 LLM_STRUCTURED_OUTPUT_MODE=prompt
-LLM_ENABLE_THINKING=false
+LLM_ENABLE_THINKING=
+LLM_THINKING_MODE=disabled
 LLM_MAX_OUTPUT_TOKENS=2048
 LLM_MAX_INPUT_TOKENS=12000
 LLM_DAILY_TOKEN_BUDGET_PER_USER=50000
 LLM_MAX_CONCURRENT_TURNS_PER_PROJECT=1
 ```
 
-若 Key 创建在新加坡，应把 Base URL 改为同一新加坡业务空间的
-`https://你的业务空间ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`，不能混用地域。
-`qwen3.8-flash` 用于当前小规模试点，以较低成本完成结构化意图识别、计划与证据叙述；模型
+`deepseek-flash` 用于当前小规模试点，以较低成本完成结构化意图识别、计划与证据叙述；
+`LLM_THINKING_MODE=disabled` 用于确保复杂任务的 Token 预算留给最终 JSON 输出。模型
 训练仍由 sklearn 确定性 Worker 执行。公开注册时必须保留单用户 Token 预算、单项目并发限制、
 熔断和审计；需要灰度时设置 `LLM_CANARY_SUBJECTS`。
 

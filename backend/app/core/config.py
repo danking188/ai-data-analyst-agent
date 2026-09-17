@@ -74,6 +74,7 @@ class Settings:
     llm_model: str | None
     llm_structured_output_mode: str
     llm_enable_thinking: bool | None
+    llm_thinking_mode: str | None
     llm_temperature: float
     llm_timeout_seconds: int
     llm_max_output_tokens: int
@@ -161,6 +162,7 @@ def get_settings() -> Settings:
         llm_model=os.getenv("LLM_MODEL") or None,
         llm_structured_output_mode=os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").lower(),
         llm_enable_thinking=_optional_bool("LLM_ENABLE_THINKING"),
+        llm_thinking_mode=(os.getenv("LLM_THINKING_MODE") or "").lower() or None,
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
         llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
         llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096")),
@@ -264,6 +266,8 @@ def get_settings() -> Settings:
         raise ValueError("LLM_PROVIDER must be openai_compatible or fake")
     if settings.llm_structured_output_mode not in {"json_schema", "json_object", "prompt"}:
         raise ValueError("LLM_STRUCTURED_OUTPUT_MODE must be json_schema, json_object, or prompt")
+    if settings.llm_thinking_mode not in {None, "enabled", "disabled"}:
+        raise ValueError("LLM_THINKING_MODE must be enabled, disabled, or empty")
     if not 0 <= settings.llm_temperature <= 2:
         raise ValueError("LLM_TEMPERATURE must be between 0 and 2")
     positive_llm_limits = {

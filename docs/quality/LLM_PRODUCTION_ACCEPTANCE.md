@@ -2,18 +2,17 @@
 
 ## Result
 
-- Date: 2026-09-15
+- Date: 2026-09-17
 - Gate: live Agent and evidence-narrative acceptance
 - Status: passed for the current small-pilot scope
 - Deployment: [DataTrace](https://8.222.221.236.sslip.io/)
-- Provider/model: Alibaba Cloud Model Studio OpenAI-compatible API / `qwen3.8-flash`
+- Provider/model: DeepSeek OpenAI-compatible API / `deepseek-flash`
 - Structured output: prompt mode; thinking disabled
 - Rollback: set `LLM_ENABLED=false` and redeploy; deterministic ingestion, analysis, modeling and
   report generation remain available.
 
-No provider token, account password, session value or signed URL is stored in this report. The API
-key and Base URL use the same Model Studio business-space region, as required by the provider's
-[OpenAI compatibility documentation](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope).
+No provider token, account password, session value or signed URL is stored in this report. The
+production secret remains only in the root-readable server environment file.
 
 ## Live workflow
 
@@ -23,7 +22,7 @@ deterministic application and the real provider:
 1. Upload, profiling, quality scan and confirmed sklearn modeling succeeded.
 2. Ten artifacts and two validator-approved claims were persisted.
 3. AI report narrative generation succeeded with strict citation and numeric-token validation.
-4. A read-only Agent turn called `project.get_context`, `schema.get` and `quality.list_issues` and
+4. A read-only Agent turn called `project.get_context`, `schema.get`, `semantic.list_metrics` and `quality.list_issues` and
    returned cited findings.
 5. A requested classification run produced a plan that stopped at `awaiting_confirmation`.
 6. Approval resumed execution through `analysis.draft_spec` and `analysis.run`; both succeeded.
@@ -32,12 +31,12 @@ deterministic application and the real provider:
 | Metric | Result | Threshold |
 | --- | ---: | ---: |
 | Agent turns | 3 / 3 succeeded | 100% for release smoke |
-| Tool calls | 5 / 5 succeeded | 100% for release smoke |
-| Input tokens | 6,147 | informational |
-| Output tokens | 2,181 | informational |
-| Average Agent latency | 9.805 s | informational |
-| P95 Agent latency | 9.907 s | at most 30 s |
-| Narrative job | 20.080 s | at most 120 s |
+| Tool calls | 6 / 6 succeeded | 100% for release smoke |
+| Input tokens | 6,461 | informational |
+| Output tokens | 2,459 | informational |
+| Average Agent latency | 4.235 s | informational |
+| P95 Agent latency | 5.095 s | at most 30 s |
+| Narrative job | 5.613 s | at most 120 s |
 | Unconfirmed writes | 0 | 0 |
 
 ## Browser acceptance

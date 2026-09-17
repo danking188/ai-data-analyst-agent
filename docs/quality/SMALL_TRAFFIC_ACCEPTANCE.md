@@ -9,10 +9,10 @@ audience. It supplements, but does not replace, the infrastructure and complianc
 Public website: [DataTrace](https://8.222.221.236.sslip.io/).
 The public readiness endpoint returned `ready`, database `ok` (SQLite), object storage `ok`
 (local), and registration remained enabled. A registered user completed session, isolation,
-logout/relogin and the upload-to-report workflow. A real Qwen Agent completed cited read tools,
+logout/relogin and the upload-to-report workflow. A real DeepSeek Agent completed cited read tools,
 plan/confirmation and controlled model execution. The 50-case offline Agent gate, project-bound
 read-only trace replay, counterfactual trace comparison, structured memory and version-bound semantic
-metrics passed. The full local regression passed 194 backend and 37 frontend tests, 83.28% backend
+metrics passed. The full local regression passed 201 backend and 37 frontend tests, 83.32% backend
 coverage, type checks, OpenAPI validation and the production frontend build.
 
 ## Acceptance profile
@@ -41,7 +41,7 @@ token with `--platform-token-env`; the token value is never printed.
 
 | Check | Acceptance criterion | Current evidence |
 | --- | --- | --- |
-| Functional regression | Backend/frontend/contract gates pass | 194 backend and 37 frontend tests, 83.28% coverage, type checks, OpenAPI and production build passed |
+| Functional regression | Backend/frontend/contract gates pass | 201 backend and 37 frontend tests, 83.32% coverage, type checks, OpenAPI and production build passed |
 | Production image | Non-root image starts and readiness passes | Aliyun single-container image passed startup, readiness and reboot recovery |
 | Authenticated smoke | Registration, login, session, capabilities and frontend proxy pass | Rerun on the public Aliyun HTTPS origin on 2026-09-15; reboot recovery remains verified from 2026-09-11 |
 | Account isolation | One account cannot list another account's project | Registered account project stayed hidden from the bootstrap administrator before and after reboot |
@@ -68,7 +68,7 @@ and SQLite.
 | Server-side latency | Mean 144.669 ms; P50 140.503 ms; P95 211.184 ms; P99 251.662 ms; max 314.744 ms |
 | Cross-border observation | 2026-09-17 workstation direct run: 498/500 succeeded (0.4% errors), 6.484 requests/s, P95 3,022.280 ms; two TLS handshakes timed out. It meets the ≤1% error criterion but not the 2-second end-to-end latency criterion; server-side results isolate the application capacity from this route variability without claiming the route is universally fast |
 | Representative workflow | Registered account: ingestion 0.552 s; quality 1.079 s; analysis 2.758 s; report 1.082 s; test project archived |
-| Real Agent workflow | 3/3 turns and 5/5 tools succeeded; cited read tools, confirmation boundary and confirmed model run passed; Agent P95 9.907 s in the API workflow |
+| Real Agent workflow | 3/3 turns and 6/6 tools succeeded; cited read tools, confirmation boundary and confirmed model run passed; Agent P95 5.095 s in the 2026-09-17 API workflow |
 | High-value Agent additions | Structured memory `structured-memory@1.0.0`, active semantic metric create/list, and evidence-auditor trace comparison with valid citations passed on the public deployment |
 | Browser workflow | Historical desktop/390px full flow passed; 2026-09-17 Chrome verified login rendering and the Agent “回放校验” drawer with four successful consistency checks. The only remaining console network error was the expected pre-login `/auth/session` 401 |
 | Resource observation | Application about 610 MiB and Caddy about 12 MiB after tests; 2 GB swap configured and unused; 29 GB disk free |
@@ -80,7 +80,7 @@ and SQLite.
 The remaining conditions are operational rather than application blockers: enable renewal before
 the current subscription expires, add an external alert receiver, copy daily backups off the
 server, and replace the temporary `sslip.io` hostname with an owned domain for long-term use. The
-Agent uses Alibaba Cloud Model Studio's OpenAI-compatible endpoint with `qwen3.8-flash`; provider
+Agent uses DeepSeek's OpenAI-compatible endpoint with `deepseek-flash`; provider
 quota, spend and latency must be monitored before widening traffic.
 
 ## Local candidate result (2026-09-08)

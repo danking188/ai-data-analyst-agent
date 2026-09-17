@@ -4,7 +4,11 @@ from functools import lru_cache
 from typing import cast
 
 from app.core.config import get_settings
-from app.llm.openai_compatible import OpenAICompatibleProvider, StructuredOutputMode
+from app.llm.openai_compatible import (
+    OpenAICompatibleProvider,
+    StructuredOutputMode,
+    ThinkingMode,
+)
 from app.llm.provider import FakeLLMProvider, LLMProvider
 
 
@@ -22,5 +26,6 @@ def get_llm_provider() -> LLMProvider | None:
         api_key=settings.llm_api_key,
         structured_output_mode=cast(StructuredOutputMode, settings.llm_structured_output_mode),
         enable_thinking=settings.llm_enable_thinking,
+        thinking_mode=cast(ThinkingMode | None, settings.llm_thinking_mode),
         max_retries=settings.llm_max_retries,
     )

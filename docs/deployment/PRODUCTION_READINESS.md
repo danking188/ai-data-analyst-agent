@@ -4,10 +4,10 @@ Repository work is considered release-ready only when CI is green and every envi
 item below has a named owner and dated evidence. A code change cannot prove DNS, TLS, backups,
 alerts, legal approval or third-party capacity.
 
-## Current pilot status (2026-09-15)
+## Current pilot status (2026-09-17)
 
 [DataTrace on Aliyun](https://8.222.221.236.sslip.io/) is live for a small pilot audience with
-self-registration and a Qwen-backed Agent enabled. The 2026-09-15 target acceptance covered
+self-registration and a DeepSeek-backed Agent enabled. The latest target acceptance covered
 registration, automatic session, private project creation, logout/relogin, upload-to-report,
 real Agent plan/confirm/execute, and desktop/mobile browser flows. Server-side read traffic passed
 500 requests at concurrency 8 with zero failures, P95 228.934 ms and 50.612 requests/s. Full-server
