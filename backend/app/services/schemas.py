@@ -11,6 +11,7 @@ from app.persistence.orm.workflow_models import ColumnSchemaRow, UserDecisionRow
 from app.persistence.repositories.audit import AuditRepository
 from app.persistence.repositories.projects import ProjectRepository
 from app.persistence.repositories.schemas import ColumnSchemaRepository
+from app.services.semantic_metrics import SemanticMetricService
 
 LOW_CONFIDENCE_THRESHOLD = 0.85
 
@@ -111,12 +112,16 @@ class SchemaService:
                     created_at=now,
                 )
             )
+        stale_metric_count = SemanticMetricService(self.session).revalidate_for_schema(
+            project_id, version_id
+        )
         AuditRepository(self.session).append(
             action="dataset_schema.updated",
             result="success",
             summary={
                 "columns": [change.column for change in payload.changes],
                 "reason": payload.reason,
+                "stale_metric_count": stale_metric_count,
             },
             project_id=project_id,
             subject_id=subject_id,

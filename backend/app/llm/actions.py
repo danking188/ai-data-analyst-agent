@@ -22,6 +22,7 @@ from app.llm.action_schemas import (
     CleaningPlanDraft,
     FeatureSuggestionDraft,
 )
+from app.llm.capabilities import CapabilityRisk, require_tool_capability
 from app.persistence.orm.workflow_models import AnalysisRunRow, ColumnSchemaRow
 from app.persistence.repositories.jobs import JobRepository
 from app.persistence.repositories.runs import AnalysisRunRepository
@@ -193,6 +194,11 @@ class AssistantActionRegistry:
         request_id: str,
         resources: dict[str, str],
     ) -> ActionExecution:
+        require_tool_capability(
+            tool_name,
+            expected_risk=CapabilityRisk.REVERSIBLE_WRITE,
+            confirmed=True,
+        )
         canonical = self.validate_arguments(
             tool_name,
             arguments,

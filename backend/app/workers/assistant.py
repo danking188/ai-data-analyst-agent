@@ -8,10 +8,11 @@ from app.analysis.tool_registry import default_tool_registry
 from app.core.config import Settings, get_settings
 from app.domain.errors import DomainError
 from app.llm.action_schemas import AnalysisSpecDraft, CleaningPlanDraft, FeatureSuggestionDraft
-from app.llm.actions import AssistantActionRegistry
+from app.llm.actions import ActionExecution, AssistantActionRegistry
 from app.llm.citations import CitationValidationError, validate_answer_sources
 from app.llm.factory import get_llm_provider
 from app.llm.failures import classify_agent_failure
+from app.llm.memory import StructuredMemoryManager
 from app.llm.orchestrator import AgentState, AgentTrace, ContextCompactor
 from app.llm.policy import AssistantBudget
 from app.llm.prompts import get_prompt
@@ -148,6 +149,12 @@ class AssistantTurnWorker:
                 compacted = ContextCompactor().compact(
                     history, existing_summary=conversation.summary
                 )
+                structured_memory = StructuredMemoryManager(session).refresh(
+                    project_id=job.project_id,
+                    conversation_id=conversation.conversation_id,
+                    dataset_version_id=conversation.dataset_version_id,
+                    messages=history,
+                )
                 if compacted.compacted_count:
                     uow.assistant.update_conversation(conversation, summary=compacted.summary)
                 context_manifest = {
@@ -156,6 +163,7 @@ class AssistantTurnWorker:
                     "dataset_version_id": conversation.dataset_version_id,
                     "history_message_ids": compacted.message_ids,
                     "compacted_message_count": compacted.compacted_count,
+                    "structured_memory_version": structured_memory["memory_version"],
                     "orchestration": AgentTrace().manifest(),
                 }
                 llm_run = uow.assistant.create_llm_run(
@@ -180,11 +188,13 @@ class AssistantTurnWorker:
                 question = user.content or ""
                 run_id = llm_run.llm_run_id
                 history_payload = compacted.recent_messages
-                if compacted.summary:
-                    history_payload.insert(
-                        0,
-                        {"role": "system", "content": f"历史会话摘要:\n{compacted.summary}"},
-                    )
+                history_payload.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": StructuredMemoryManager.prompt_context(structured_memory),
+                    },
+                )
         finally:
             session.close()
 
@@ -416,7 +426,9 @@ class AssistantTurnWorker:
                     tool_call_ids=requested_ids,
                 )
                 if len(calls) != len(requested_ids) or any(
-                    call.status != "approved" for call in calls
+                    call.status not in {"approved", "running", "succeeded"}
+                    or (call.status == "running" and not call.result_json)
+                    for call in calls
                 ):
                     raise DomainError(
                         "ASSISTANT_CONFIRMATION_STALE",
@@ -466,52 +478,78 @@ class AssistantTurnWorker:
             try:
                 with UnitOfWork(call_session) as uow:
                     call = uow.assistant.get_tool_call(tool_call_id)
-                    if call.status != "approved":
+                    already_succeeded = call.status == "succeeded" and call.result_json is not None
+                    if already_succeeded:
+                        execution = ActionExecution(
+                            tool_name=call.tool_name,
+                            resource_type=call.result_resource_type,
+                            resource_id=call.result_resource_id,
+                            result=dict(call.result_json or {}),
+                        )
+                    elif call.status == "running" and call.result_json:
+                        execution = self._execution_from_checkpoint(call)
+                    elif call.status == "approved":
+                        call.status = "running"
+                        call_session.flush()
+                        execution = AssistantActionRegistry(call_session).execute(
+                            call.tool_name,
+                            call.arguments_json,
+                            project_id=project_id,
+                            dataset_version_id=dataset_version_id,
+                            subject_id=subject_id,
+                            request_id=f"job:{job_id}:tool:{tool_call_id}",
+                            resources=resources,
+                        )
+                        checkpoint = {
+                            **execution.result,
+                            "_execution_checkpoint": {
+                                "tool_name": execution.tool_name,
+                                "child_job_id": execution.child_job_id,
+                                "child_job_kind": execution.child_job_kind,
+                            },
+                        }
+                        uow.assistant.checkpoint_tool_call(
+                            call,
+                            result=checkpoint,
+                            resource_type=execution.resource_type,
+                            resource_id=execution.resource_id,
+                        )
+                    else:
                         raise DomainError(
                             "ASSISTANT_CONFIRMATION_STALE",
                             "工具调用不再处于已确认状态",
                             409,
                         )
-                    call.status = "running"
-                    call_session.flush()
-                    execution = AssistantActionRegistry(call_session).execute(
-                        call.tool_name,
-                        call.arguments_json,
-                        project_id=project_id,
-                        dataset_version_id=dataset_version_id,
-                        subject_id=subject_id,
-                        request_id=f"job:{job_id}:tool:{tool_call_id}",
-                        resources=resources,
-                    )
                     child_job_id = execution.child_job_id
                     child_job_kind = execution.child_job_kind
                     execution_result = execution.result
                     resource_type = execution.resource_type
                     resource_id = execution.resource_id
-                if child_job_id and child_job_kind:
+                if child_job_id and child_job_kind and not already_succeeded:
                     self._run_child_job(child_job_kind, child_job_id)
                     self._require_child_success(child_job_id)
-                finish_session = self.database.session()
-                try:
-                    with UnitOfWork(finish_session) as uow:
-                        call = uow.assistant.get_tool_call(tool_call_id)
-                        uow.assistant.finish_tool_call(
-                            call,
-                            status="succeeded",
-                            result=execution_result,
-                            resource_type=resource_type,
-                            resource_id=resource_id,
-                        )
-                        job = uow.jobs.get(job_id)
-                        uow.jobs.heartbeat(
-                            job=job,
-                            worker_id=self.worker_id,
-                            progress=min(15 + int(position / len(ordered_ids) * 75), 90),
-                            current_step=f"执行受控工具 {position}/{len(ordered_ids)}",
-                            lease_seconds=1800,
-                        )
-                finally:
-                    finish_session.close()
+                if not already_succeeded:
+                    finish_session = self.database.session()
+                    try:
+                        with UnitOfWork(finish_session) as uow:
+                            call = uow.assistant.get_tool_call(tool_call_id)
+                            uow.assistant.finish_tool_call(
+                                call,
+                                status="succeeded",
+                                result=execution_result,
+                                resource_type=resource_type,
+                                resource_id=resource_id,
+                            )
+                            job = uow.jobs.get(job_id)
+                            uow.jobs.heartbeat(
+                                job=job,
+                                worker_id=self.worker_id,
+                                progress=min(15 + int(position / len(ordered_ids) * 75), 90),
+                                current_step=f"执行受控工具 {position}/{len(ordered_ids)}",
+                                lease_seconds=1800,
+                            )
+                    finally:
+                        finish_session.close()
                 if resource_type and resource_id:
                     resources[resource_type] = resource_id
                 results.append(
@@ -540,6 +578,25 @@ class AssistantTurnWorker:
         trace.move(AgentState.COMPLETE)
         self._persist_trace(run_id, trace)
         self._persist_answer(job_id, run_id, answer, budget)
+
+    @staticmethod
+    def _execution_from_checkpoint(call: Any) -> ActionExecution:
+        result = dict(call.result_json or {})
+        checkpoint = result.pop("_execution_checkpoint", {})
+        if checkpoint.get("tool_name") != call.tool_name:
+            raise DomainError(
+                "ASSISTANT_EXECUTION_CHECKPOINT_INVALID",
+                "工具执行检查点与原调用不匹配",
+                409,
+            )
+        return ActionExecution(
+            tool_name=call.tool_name,
+            resource_type=call.result_resource_type,
+            resource_id=call.result_resource_id,
+            result=result,
+            child_job_id=checkpoint.get("child_job_id"),
+            child_job_kind=checkpoint.get("child_job_kind"),
+        )
 
     def _generate_intent(
         self,
@@ -1679,15 +1736,29 @@ class AssistantTurnWorker:
     @staticmethod
     def _tools_for_intent(intent: str, version_id: str | None) -> list[str]:
         if intent == "answer_from_evidence":
-            return ["artifact.search", "claim.search"] if version_id else ["run.get_status"]
+            return (
+                ["semantic.list_metrics", "artifact.search", "claim.search"]
+                if version_id
+                else ["run.get_status"]
+            )
         if intent == "inspect_data":
             return (
-                ["project.get_context", "schema.get", "quality.list_issues"]
+                [
+                    "project.get_context",
+                    "schema.get",
+                    "semantic.list_metrics",
+                    "quality.list_issues",
+                ]
                 if version_id
                 else ["project.get_context"]
             )
         if intent == "explain_model":
-            return ["artifact.search", "claim.search", "run.get_status"]
+            return [
+                "semantic.list_metrics",
+                "artifact.search",
+                "claim.search",
+                "run.get_status",
+            ]
         return ["project.get_context"]
 
     def _bounded_json(self, payload: dict[str, Any]) -> str:

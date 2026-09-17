@@ -25,6 +25,7 @@ READ_ONLY_TOOLS = frozenset(
         "quality.list_issues",
         "run.get_status",
         "schema.get",
+        "semantic.list_metrics",
     }
 )
 ALLOWED_TOOLS = PLANNED_WRITE_TOOLS | READ_ONLY_TOOLS

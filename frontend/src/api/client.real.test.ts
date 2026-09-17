@@ -203,6 +203,54 @@ describe("apiClient real mode contract calls", () => {
     );
   });
 
+  it("compares trace candidates without requesting tool execution", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      source_message_id: "msg_1",
+      source_run_id: "llmr_1",
+      replay_mode: "counterfactual_no_tools",
+      candidates: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiClient } = await loadRealClient();
+    await apiClient.compareAssistantTrace("prj_1", "msg_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api.test/api/v1/projects/prj_1/assistant/messages/msg_1/trace/compare",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          candidates: [
+            { label: "current", prompt_variant: "current" },
+            { label: "evidence-auditor", prompt_variant: "evidence_auditor" },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("creates semantic metrics with an idempotency key", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ metric_id: "metric_1" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiClient } = await loadRealClient();
+    const input = {
+      dataset_version_id: "dsv_1",
+      name: "销售额",
+      description: "含税销售额",
+      source_column: "revenue",
+      aggregation: "sum" as const,
+      unit: "CNY",
+      grain_dimensions: [],
+    };
+    await apiClient.createSemanticMetric("prj_1", input);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api.test/api/v1/projects/prj_1/semantic-metrics",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(input) }),
+    );
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Headers;
+    expect(headers.get("Idempotency-Key")).toBeTruthy();
+  });
+
   it("updates proposed assistant tool arguments through the project route", async () => {
     const fetchMock = vi.fn(async () => Response.json({
       tool_call_id: "tool_1",

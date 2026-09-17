@@ -46,6 +46,22 @@ status, executed tool counts, and unfinished calls without repeating provider re
 actions. Fault-injection coverage includes malformed intent/answer recovery, provider timeout
 classification, circuit-breaker recovery, stale job recovery, and deterministic child-job checks.
 
+## High-value Agent foundation deployment (2026-09-17)
+
+The public Aliyun deployment now includes structured version-aware conversation memory, a safe
+version-bound semantic metric layer, counterfactual trace comparison that reuses recorded tool
+results without rerunning tools, capability risk declarations, durable write-tool execution
+checkpoints, and sanitized bad-case export. The database migrated to
+`20260917_0001 (head)` and contains the `semantic_metrics` table.
+
+The post-deploy disposable workflow passed upload, quality scan, model training, evidence report,
+AI narrative, cited Agent reads, confirmation and approved analysis execution. All 3 Agent turns
+and all 6 tool calls succeeded. Separate public-API checks created and listed an active semantic
+metric, read `structured-memory@1.0.0`, and generated an evidence-auditor candidate whose citations
+validated without repeating a tool or write action. Read-only traffic passed both from the server
+(200 requests, concurrency 8, 0 failures, 56.061 RPS, 220.333 ms P95) and from the workstation
+(100 requests, concurrency 5, 0 failures, 3.650 RPS, 1,465.980 ms P95).
+
 ## Automated release artifacts
 
 Pushing a `v*` tag, or manually dispatching `Release container images`, first reruns CI and the

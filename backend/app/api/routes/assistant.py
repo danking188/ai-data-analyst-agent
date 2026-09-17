@@ -16,6 +16,7 @@ from app.api.schemas import (
     AssistantConversationUpdate,
     AssistantFeedback,
     AssistantFeedbackRequest,
+    AssistantMemory,
     AssistantMessage,
     AssistantMessageCreate,
     AssistantMessagePage,
@@ -23,6 +24,8 @@ from app.api.schemas import (
     AssistantRunTrace,
     AssistantToolCall,
     AssistantToolCallUpdate,
+    AssistantTraceCompareRequest,
+    AssistantTraceCompareResult,
     AssistantTraceReplay,
     AssistantTurnAccepted,
 )
@@ -37,6 +40,45 @@ from app.workers.assistant import process_assistant_turn_job
 from app.workers.dispatch import schedule_job
 
 router = APIRouter(prefix="/projects/{project_id}/assistant", tags=["Assistant"])
+
+
+@router.get(
+    "/conversations/{conversation_id}/memory",
+    response_model=AssistantMemory,
+    operation_id="getAssistantMemory",
+)
+def get_memory(
+    project_id: str,
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(authenticate)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssistantMemory:
+    return AssistantService(session, settings).get_memory(
+        project_id, conversation_id, subject_id=principal.subject_id
+    )
+
+
+@router.delete(
+    "/conversations/{conversation_id}/memory",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="clearAssistantMemory",
+)
+def clear_memory(
+    project_id: str,
+    conversation_id: str,
+    request: Request,
+    principal: Annotated[Principal, Depends(authenticate)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    with UnitOfWork(session):
+        AssistantService(session, settings).clear_memory(
+            project_id,
+            conversation_id,
+            subject_id=principal.subject_id,
+            request_id=get_request_id(request),
+        )
 
 
 @router.get(
@@ -89,6 +131,24 @@ def replay_run_trace(
 ) -> AssistantTraceReplay:
     return AssistantService(session, settings).replay_trace(
         project_id, message_id, subject_id=principal.subject_id
+    )
+
+
+@router.post(
+    "/messages/{message_id}/trace/compare",
+    response_model=AssistantTraceCompareResult,
+    operation_id="compareAssistantRunTrace",
+)
+def compare_run_trace(
+    project_id: str,
+    message_id: str,
+    payload: AssistantTraceCompareRequest,
+    principal: Annotated[Principal, Depends(authenticate)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssistantTraceCompareResult:
+    return AssistantService(session, settings).compare_trace(
+        project_id, message_id, payload, subject_id=principal.subject_id
     )
 
 

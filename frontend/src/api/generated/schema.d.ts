@@ -565,6 +565,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/semantic-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** 查询项目的版本化语义指标 */
+        get: operations["listSemanticMetrics"];
+        put?: never;
+        /** 创建安全的版本化语义指标 */
+        post: operations["createSemanticMetric"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/semantic-metrics/{metric_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                metric_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 更新或归档语义指标 */
+        patch: operations["updateSemanticMetric"];
+        trace?: never;
+    };
     "/projects/{project_id}/runs": {
         parameters: {
             query?: never;
@@ -824,6 +864,27 @@ export interface paths {
         patch: operations["updateAssistantConversation"];
         trace?: never;
     };
+    "/projects/{project_id}/assistant/conversations/{conversation_id}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        /** 查看数据版本感知的结构化会话记忆 */
+        get: operations["getAssistantMemory"];
+        put?: never;
+        post?: never;
+        /** 清空会话的结构化记忆 */
+        delete: operations["clearAssistantMemory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/assistant/conversations/{conversation_id}/messages": {
         parameters: {
             query?: never;
@@ -879,6 +940,26 @@ export interface paths {
         put?: never;
         /** 只读回放并校验 Assistant Turn，不重新执行模型或写操作 */
         post: operations["replayAssistantRunTrace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/assistant/messages/{message_id}/trace/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 固定已记录工具结果对比候选 Prompt 或模型 */
+        post: operations["compareAssistantRunTrace"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1197,6 +1278,38 @@ export interface components {
             low_confidence_count: number;
             columns: components["schemas"]["ColumnSchema"][];
         };
+        SemanticMetricCreate: {
+            dataset_version_id: string;
+            name: string;
+            description: string;
+            source_column?: string | null;
+            /** @enum {string} */
+            aggregation: "sum" | "average" | "minimum" | "maximum" | "count" | "distinct_count";
+            unit?: string | null;
+            /** @default [] */
+            grain_dimensions: string[];
+        };
+        SemanticMetricUpdate: {
+            description?: string | null;
+            unit?: string | null;
+            grain_dimensions?: string[] | null;
+            /** @enum {string|null} */
+            status?: "active" | "archived" | null;
+        };
+        SemanticMetric: components["schemas"]["SemanticMetricCreate"] & {
+            metric_id: string;
+            project_id: string;
+            /** @enum {string} */
+            status: "active" | "stale" | "archived";
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SemanticMetricPage: components["schemas"]["PageMeta"] & {
+            items: components["schemas"]["SemanticMetric"][];
+        };
         ColumnSchema: {
             name: string;
             /** @enum {string} */
@@ -1505,6 +1618,25 @@ export interface components {
         AssistantConversationPage: components["schemas"]["PageMeta"] & {
             items: components["schemas"]["AssistantConversation"][];
         };
+        AssistantMemory: {
+            conversation_id: string;
+            dataset_version_id: string | null;
+            memory_version: string;
+            session_state: {
+                [key: string]: unknown;
+            };
+            user_preferences: {
+                [key: string]: unknown;
+            }[];
+            verified_facts: {
+                [key: string]: unknown;
+            }[];
+            pending_decisions: {
+                [key: string]: unknown;
+            }[];
+            /** Format: date-time */
+            updated_at: string;
+        };
         AssistantMessageCreate: {
             content: string;
         };
@@ -1627,6 +1759,37 @@ export interface components {
             verified: boolean;
             replayed_state: string;
             checks: components["schemas"]["AssistantTraceCheck"][];
+        };
+        AssistantReplayCandidate: {
+            label: string;
+            /**
+             * @default current
+             * @enum {string}
+             */
+            prompt_variant: "current" | "concise" | "evidence_auditor";
+            model?: string | null;
+        };
+        AssistantTraceCompareRequest: {
+            candidates: components["schemas"]["AssistantReplayCandidate"][];
+        };
+        AssistantReplayCandidateResult: {
+            label: string;
+            model: string;
+            prompt_variant: string;
+            answer: components["schemas"]["AssistantAnswer"];
+            citation_valid: boolean;
+            validation_error: string | null;
+            similarity_to_original: number;
+            input_tokens: number;
+            output_tokens: number;
+            latency_ms: number;
+        };
+        AssistantTraceCompareResult: {
+            source_message_id: string;
+            source_run_id: string;
+            /** @enum {string} */
+            replay_mode: "counterfactual_no_tools";
+            candidates: components["schemas"]["AssistantReplayCandidateResult"][];
         };
         AssistantMessage: {
             message_id: string;
@@ -2923,6 +3086,92 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    listSemanticMetrics: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+                page_size?: components["parameters"]["PageSize"];
+                dataset_version_id?: string;
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 语义指标列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SemanticMetricPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createSemanticMetric: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SemanticMetricCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建的语义指标 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SemanticMetric"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateSemanticMetric: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                metric_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SemanticMetricUpdate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的语义指标 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SemanticMetric"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            default: components["responses"]["Error"];
+        };
+    };
     listRuns: {
         parameters: {
             query?: {
@@ -3361,6 +3610,53 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getAssistantMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 结构化记忆 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMemory"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    clearAssistantMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                conversation_id: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 记忆已清空 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     listAssistantMessages: {
         parameters: {
             query?: {
@@ -3468,6 +3764,35 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    compareAssistantRunTrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                message_id: components["parameters"]["AssistantMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantTraceCompareRequest"];
+            };
+        };
+        responses: {
+            /** @description 无工具副作用的候选回答对比 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantTraceCompareResult"];
+                };
+            };
+            409: components["responses"]["Conflict"];
             default: components["responses"]["Error"];
         };
     };

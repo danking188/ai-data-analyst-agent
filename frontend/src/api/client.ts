@@ -8,6 +8,7 @@ import type {
   AssistantFeedback,
   AssistantMessage,
   AssistantMetrics,
+  AssistantTraceCompareResult,
   AssistantTraceReplay,
   AssistantToolCall,
   AssistantTurnAccepted,
@@ -29,6 +30,8 @@ import type {
   QualityIssue,
   ReportExportInput,
   SchemaPatch,
+  SemanticMetric,
+  SemanticMetricInput,
   SessionInfo,
   SystemCapabilities,
 } from "./contracts";
@@ -384,6 +387,20 @@ export const apiClient = {
     });
   },
 
+  listSemanticMetrics(projectId: string, versionId: string): Promise<Page<SemanticMetric>> {
+    if (API_MODE === "mock") return mockApi.listSemanticMetrics(projectId, versionId);
+    return requestAll(`/projects/${projectId}/semantic-metrics?dataset_version_id=${versionId}`);
+  },
+
+  createSemanticMetric(projectId: string, input: SemanticMetricInput): Promise<SemanticMetric> {
+    if (API_MODE === "mock") return mockApi.createSemanticMetric(projectId, input);
+    return request(`/projects/${projectId}/semantic-metrics`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey() },
+      body: JSON.stringify(input),
+    });
+  },
+
   listAnalysisSpecs(projectId: string, versionId: string): Promise<Page<AnalysisSpec>> {
     if (API_MODE === "mock") return mockApi.listAnalysisSpecs();
     return requestAll(`/projects/${projectId}/analysis-specs?dataset_version_id=${versionId}`);
@@ -503,6 +520,22 @@ export const apiClient = {
     if (API_MODE === "mock") return mockApi.replayAssistantTrace(messageId);
     return request(`/projects/${projectId}/assistant/messages/${messageId}/trace/replay`, {
       method: "POST",
+    });
+  },
+
+  compareAssistantTrace(
+    projectId: string,
+    messageId: string,
+  ): Promise<AssistantTraceCompareResult> {
+    if (API_MODE === "mock") return mockApi.compareAssistantTrace(messageId);
+    return request(`/projects/${projectId}/assistant/messages/${messageId}/trace/compare`, {
+      method: "POST",
+      body: JSON.stringify({
+        candidates: [
+          { label: "current", prompt_variant: "current" },
+          { label: "evidence-auditor", prompt_variant: "evidence_auditor" },
+        ],
+      }),
     });
   },
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import App from "./App";
@@ -95,6 +95,29 @@ describe("App", () => {
     );
 
     expect(await screen.findByRole("button", { name: "AI 解读" })).toBeInTheDocument();
+  });
+
+  it("exposes version-bound semantic metric controls", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/data"]}>
+          <ToastProvider>
+            <AppProvider>
+              <App />
+            </AppProvider>
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const tab = await screen.findByRole("tab", { name: "语义指标" });
+    fireEvent.click(tab);
+    expect(await screen.findByRole("heading", { name: "业务语义指标" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建指标" })).toBeDisabled();
+    expect(screen.getByText(/Agent 只能使用已校验的聚合定义/)).toBeInTheDocument();
   });
 
   it("renders assistant evidence, tool activity, and confirmation controls", async () => {

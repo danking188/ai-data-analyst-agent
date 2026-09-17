@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- 新增绑定数据版本的 `semantic-metrics` 列表、创建和更新接口；仅支持安全
+  聚合算子，Schema 冲突时自动失效。
+- 新增 Assistant 结构化记忆查看/清空接口，以及固定历史工具结果的
+  `POST .../trace/compare` 候选 Prompt/模型对比接口。
 - 新增 `GET /projects/{project_id}/assistant/messages/{message_id}/trace` 与只读
   `POST .../trace/replay`，项目成员可查看并校验持久化的状态迁移、模型调用、工具结果、
   失败分类和资源引用；回放不会再次调用模型或执行写操作。

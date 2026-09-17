@@ -286,6 +286,100 @@ class DatasetSchema(BaseModel):
     columns: list[ColumnSchema]
 
 
+SemanticAggregation = Literal[
+    "sum", "average", "minimum", "maximum", "count", "distinct_count"
+]
+
+
+class SemanticMetricCreate(StrictModel):
+    dataset_version_id: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=1000)
+    source_column: str | None = Field(default=None, max_length=255)
+    aggregation: SemanticAggregation
+    unit: str | None = Field(default=None, max_length=40)
+    grain_dimensions: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("name", "description")
+    @classmethod
+    def strip_semantic_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("value must not be blank")
+        return value
+
+    @field_validator("source_column", "unit")
+    @classmethod
+    def strip_optional_semantic_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def validate_metric_shape(self) -> SemanticMetricCreate:
+        if self.aggregation != "count" and not self.source_column:
+            raise ValueError("source_column is required unless aggregation=count")
+        if len(self.grain_dimensions) != len(set(self.grain_dimensions)):
+            raise ValueError("grain_dimensions must not contain duplicates")
+        return self
+
+
+class SemanticMetricUpdate(StrictModel):
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+    unit: str | None = Field(default=None, max_length=40)
+    grain_dimensions: list[str] | None = Field(default=None, max_length=8)
+    status: Literal["active", "archived"] | None = None
+
+    @field_validator("description")
+    @classmethod
+    def strip_update_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("description must not be blank")
+        return value
+
+    @field_validator("unit")
+    @classmethod
+    def strip_update_unit(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> SemanticMetricUpdate:
+        if not self.model_fields_set:
+            raise ValueError("at least one field is required")
+        if self.grain_dimensions is not None and len(self.grain_dimensions) != len(
+            set(self.grain_dimensions)
+        ):
+            raise ValueError("grain_dimensions must not contain duplicates")
+        return self
+
+
+class SemanticMetric(BaseModel):
+    metric_id: str
+    project_id: str
+    dataset_version_id: str
+    name: str
+    description: str
+    source_column: str | None
+    aggregation: SemanticAggregation
+    unit: str | None
+    grain_dimensions: list[str]
+    status: Literal["active", "stale", "archived"]
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SemanticMetricPage(BaseModel):
+    items: list[SemanticMetric]
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+
+
 class ColumnSchemaPatch(StrictModel):
     column: str = Field(min_length=1)
     semantic_type: SemanticType | None = None
@@ -751,6 +845,17 @@ class AssistantConversationPage(BaseModel):
     has_more: bool
 
 
+class AssistantMemory(BaseModel):
+    conversation_id: str
+    dataset_version_id: str | None
+    memory_version: str
+    session_state: dict[str, Any]
+    user_preferences: list[dict[str, Any]]
+    verified_facts: list[dict[str, Any]]
+    pending_decisions: list[dict[str, Any]]
+    updated_at: datetime
+
+
 class AssistantMessageCreate(StrictModel):
     content: str = Field(min_length=1, max_length=12000)
 
@@ -833,6 +938,43 @@ class AssistantTraceReplay(BaseModel):
     verified: bool
     replayed_state: str
     checks: list[AssistantTraceCheck]
+
+
+class AssistantReplayCandidate(StrictModel):
+    label: str = Field(min_length=1, max_length=80)
+    prompt_variant: Literal["current", "concise", "evidence_auditor"] = "current"
+    model: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class AssistantTraceCompareRequest(StrictModel):
+    candidates: list[AssistantReplayCandidate] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def labels_are_unique(self) -> AssistantTraceCompareRequest:
+        labels = [candidate.label for candidate in self.candidates]
+        if len(labels) != len(set(labels)):
+            raise ValueError("candidate labels must be unique")
+        return self
+
+
+class AssistantReplayCandidateResult(BaseModel):
+    label: str
+    model: str
+    prompt_variant: str
+    answer: AssistantAnswer
+    citation_valid: bool
+    validation_error: str | None
+    similarity_to_original: float = Field(ge=0, le=1)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    latency_ms: int = Field(ge=0)
+
+
+class AssistantTraceCompareResult(BaseModel):
+    source_message_id: str
+    source_run_id: str
+    replay_mode: Literal["counterfactual_no_tools"]
+    candidates: list[AssistantReplayCandidateResult]
 
 
 class AssistantMessage(BaseModel):

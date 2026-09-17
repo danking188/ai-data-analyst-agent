@@ -6,6 +6,7 @@ import type {
   AssistantFeedback,
   AssistantMessage,
   AssistantMetrics,
+  AssistantTraceCompareResult,
   AssistantTraceReplay,
   AssistantTurnAccepted,
   Artifact,
@@ -23,6 +24,8 @@ import type {
   QualityIssue,
   ReportExportInput,
   SchemaPatch,
+  SemanticMetric,
+  SemanticMetricInput,
   SystemCapabilities,
 } from "./contracts";
 import {
@@ -55,6 +58,7 @@ const analysisSpecs = [structuredClone(seedAnalysisSpec)];
 const runs = structuredClone(seedRuns);
 const artifacts = structuredClone(seedArtifacts);
 const claims = structuredClone(seedClaims);
+const semanticMetrics: SemanticMetric[] = [];
 const assistantNow = new Date().toISOString();
 const assistantConversations: AssistantConversation[] = [
   {
@@ -597,6 +601,38 @@ export const mockApi = {
     return createJob("version_comparison", "计算版本差异", "artifact", "art_version_compare");
   },
 
+  async listSemanticMetrics(
+    projectId: string,
+    versionId: string,
+  ): Promise<Page<SemanticMetric>> {
+    await wait();
+    return page(
+      semanticMetrics.filter(
+        (metric) =>
+          metric.project_id === projectId && metric.dataset_version_id === versionId,
+      ),
+    );
+  },
+
+  async createSemanticMetric(
+    projectId: string,
+    input: SemanticMetricInput,
+  ): Promise<SemanticMetric> {
+    await wait();
+    const now = new Date().toISOString();
+    const metric: SemanticMetric = {
+      metric_id: `metric_${crypto.randomUUID()}`,
+      project_id: projectId,
+      ...structuredClone(input),
+      status: "active",
+      created_by: "demo-analyst",
+      created_at: now,
+      updated_at: now,
+    };
+    semanticMetrics.push(metric);
+    return structuredClone(metric);
+  },
+
   async listAnalysisSpecs(): Promise<Page<AnalysisSpec>> {
     await wait();
     return page(structuredClone(analysisSpecs));
@@ -929,6 +965,35 @@ export const mockApi = {
         { name: "run_terminal_state", passed: true, details: {} },
         { name: "tool_call_count", passed: true, details: {} },
         { name: "tool_terminal_states", passed: true, details: {} },
+      ],
+    };
+  },
+
+  async compareAssistantTrace(messageId: string): Promise<AssistantTraceCompareResult> {
+    await wait();
+    const replay = await this.replayAssistantTrace(messageId);
+    return {
+      source_message_id: messageId,
+      source_run_id: replay.trace.llm_run_id,
+      replay_mode: "counterfactual_no_tools",
+      candidates: [
+        {
+          label: "current",
+          model: replay.trace.model,
+          prompt_variant: "current",
+          answer: {
+            summary: "使用已记录工具结果生成的候选回答。",
+            findings: [],
+            next_actions: [],
+            limitations: [],
+          },
+          citation_valid: true,
+          validation_error: null,
+          similarity_to_original: 1,
+          input_tokens: 100,
+          output_tokens: 30,
+          latency_ms: 120,
+        },
       ],
     };
   },

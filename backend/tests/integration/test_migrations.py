@@ -21,6 +21,7 @@ def test_initial_migration_creates_foundation_tables(app_client) -> None:
         "llm_runs",
         "llm_tool_calls",
         "assistant_feedback",
+        "semantic_metrics",
         "alembic_version",
     }.issubset(set(inspector.get_table_names()))
 

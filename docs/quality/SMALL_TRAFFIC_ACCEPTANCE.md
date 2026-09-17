@@ -10,10 +10,10 @@ Public website: [DataTrace](https://8.222.221.236.sslip.io/).
 The public readiness endpoint returned `ready`, database `ok` (SQLite), object storage `ok`
 (local), and registration remained enabled. A registered user completed session, isolation,
 logout/relogin and the upload-to-report workflow. A real Qwen Agent completed cited read tools,
-plan/confirmation and controlled model execution. The full 50-case Agent gate and the project-bound
-read-only trace replay passed. Playwright verified the deployed replay drawer and the current login
-page without framework errors. The full local regression passed 181 backend and 34 frontend tests,
-approximately 83% backend coverage, type checks, OpenAPI validation and the production frontend build.
+plan/confirmation and controlled model execution. The 50-case offline Agent gate, project-bound
+read-only trace replay, counterfactual trace comparison, structured memory and version-bound semantic
+metrics passed. The full local regression passed 194 backend and 37 frontend tests, 83.28% backend
+coverage, type checks, OpenAPI validation and the production frontend build.
 
 ## Acceptance profile
 
@@ -41,11 +41,11 @@ token with `--platform-token-env`; the token value is never printed.
 
 | Check | Acceptance criterion | Current evidence |
 | --- | --- | --- |
-| Functional regression | Backend/frontend/contract gates pass | 181 backend and 34 frontend tests, ~83% coverage, type checks, OpenAPI and production build passed |
+| Functional regression | Backend/frontend/contract gates pass | 194 backend and 37 frontend tests, 83.28% coverage, type checks, OpenAPI and production build passed |
 | Production image | Non-root image starts and readiness passes | Aliyun single-container image passed startup, readiness and reboot recovery |
 | Authenticated smoke | Registration, login, session, capabilities and frontend proxy pass | Rerun on the public Aliyun HTTPS origin on 2026-09-15; reboot recovery remains verified from 2026-09-11 |
 | Account isolation | One account cannot list another account's project | Registered account project stayed hidden from the bootstrap administrator before and after reboot |
-| Small read traffic | 500 requests, concurrency 8, error rate ≤1%, P95 ≤2s | 2026-09-17 server-side: 0 failures, 54.740 RPS and 211.184 ms P95 |
+| Small read traffic | 500 requests, concurrency 8, error rate ≤1%, P95 ≤2s | Post-deploy sample: server-side 200/concurrency 8 at 56.061 RPS and 220.333 ms P95; workstation 100/concurrency 5 at 3.650 RPS and 1,465.980 ms P95; both had 0 failures |
 | Representative workflow | Upload, quality scan, analysis, evidence and download pass | Registered account passed: 10 artifacts, 2 validated claims and a 4,159-byte report; real Agent plan/confirm/execute also passed |
 | Browser workflow | Desktop/mobile registration and primary Agent interaction pass | Playwright passed registration, project creation, upload, Agent read turn and 390px navigation; 0 page errors, 0 HTTP 5xx |
 | Recovery | A current local backup exists and services recover after reboot | SQLite online backup and file archive passed; off-server recovery remains pending |
@@ -69,6 +69,7 @@ and SQLite.
 | Cross-border observation | 2026-09-17 workstation direct run: 498/500 succeeded (0.4% errors), 6.484 requests/s, P95 3,022.280 ms; two TLS handshakes timed out. It meets the ≤1% error criterion but not the 2-second end-to-end latency criterion; server-side results isolate the application capacity from this route variability without claiming the route is universally fast |
 | Representative workflow | Registered account: ingestion 0.552 s; quality 1.079 s; analysis 2.758 s; report 1.082 s; test project archived |
 | Real Agent workflow | 3/3 turns and 5/5 tools succeeded; cited read tools, confirmation boundary and confirmed model run passed; Agent P95 9.907 s in the API workflow |
+| High-value Agent additions | Structured memory `structured-memory@1.0.0`, active semantic metric create/list, and evidence-auditor trace comparison with valid citations passed on the public deployment |
 | Browser workflow | Historical desktop/390px full flow passed; 2026-09-17 Chrome verified login rendering and the Agent “回放校验” drawer with four successful consistency checks. The only remaining console network error was the expected pre-login `/auth/session` 401 |
 | Resource observation | Application about 610 MiB and Caddy about 12 MiB after tests; 2 GB swap configured and unused; 29 GB disk free |
 | Recovery | Full server reboot completed after registration; both containers returned automatically and the new account/project remained available |

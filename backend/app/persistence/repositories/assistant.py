@@ -575,6 +575,30 @@ class AssistantRepository:
         self.session.flush()
         return row
 
+    def checkpoint_tool_call(
+        self,
+        row: LLMToolCallRow,
+        *,
+        result: dict[str, Any],
+        resource_type: str | None,
+        resource_id: str | None,
+    ) -> LLMToolCallRow:
+        """Persist an execution receipt before a child job or final status update.
+
+        A retry can resume from this receipt without creating the resource twice.
+        """
+        if row.status != "running":
+            raise state_conflict(
+                "只有执行中的工具调用可以写入检查点",
+                tool_call_id=row.tool_call_id,
+                status=row.status,
+            )
+        row.result_json = result
+        row.result_resource_type = resource_type
+        row.result_resource_id = resource_id
+        self.session.flush()
+        return row
+
     def decide_tool_calls(
         self,
         rows: list[LLMToolCallRow],

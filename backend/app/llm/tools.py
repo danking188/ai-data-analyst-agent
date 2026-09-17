@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import DomainError, not_found
+from app.llm.capabilities import CapabilityRisk, require_tool_capability
 from app.persistence.orm.models import DatasetVersionRow, ProjectRow
 from app.persistence.orm.workflow_models import (
     AnalysisRunRow,
@@ -15,6 +16,7 @@ from app.persistence.orm.workflow_models import (
     ClaimRow,
     ColumnSchemaRow,
     QualityIssueRow,
+    SemanticMetricRow,
 )
 
 
@@ -88,6 +90,7 @@ DEFINITIONS = {
         AssistantToolDefinition("artifact.search", "1.0.0", ArtifactSearchArguments),
         AssistantToolDefinition("claim.search", "1.0.0", ClaimSearchArguments),
         AssistantToolDefinition("run.get_status", "1.0.0", RunStatusArguments),
+        AssistantToolDefinition("semantic.list_metrics", "1.0.0", VersionArguments),
     )
 }
 
@@ -117,6 +120,7 @@ class AssistantToolRegistry:
                 409,
                 details={"tool_name": tool_name},
             )
+        require_tool_capability(tool_name, expected_risk=CapabilityRisk.READ, confirmed=False)
         parsed = definition.arguments_schema.model_validate(arguments or {})
         handler = getattr(self, f"_{tool_name.replace('.', '_')}")
         return cast(AssistantToolResult, handler(context, parsed))
@@ -344,6 +348,42 @@ class AssistantToolRegistry:
             "1.0.0",
             {"runs": runs},
             {row.run_id: str(runs[index]) for index, row in enumerate(rows)},
+        )
+
+    def _semantic_list_metrics(
+        self, context: AssistantToolContext, arguments: VersionArguments
+    ) -> AssistantToolResult:
+        version_id = self._resolve_version(context, arguments.dataset_version_id)
+        rows = list(
+            self.session.scalars(
+                select(SemanticMetricRow)
+                .where(
+                    SemanticMetricRow.project_id == context.project_id,
+                    SemanticMetricRow.dataset_version_id == version_id,
+                    SemanticMetricRow.status == "active",
+                )
+                .order_by(SemanticMetricRow.name)
+            )
+        )
+        metrics = [
+            {
+                "metric_id": row.metric_id,
+                "name": row.name,
+                "description": row.description,
+                "source_column": row.source_column,
+                "aggregation": row.aggregation,
+                "unit": row.unit,
+                "grain_dimensions": row.grain_dimensions_json,
+            }
+            for row in rows
+        ]
+        return AssistantToolResult(
+            "semantic.list_metrics",
+            "1.0.0",
+            {"dataset_version_id": version_id, "metrics": metrics},
+            {row.metric_id: str(metrics[index]) for index, row in enumerate(rows)},
+            "dataset_version",
+            version_id,
         )
 
     def _resolve_version(self, context: AssistantToolContext, requested: str | None) -> str:

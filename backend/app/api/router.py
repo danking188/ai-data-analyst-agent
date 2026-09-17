@@ -13,6 +13,7 @@ from app.api.routes import (
     reports,
     runs,
     schemas,
+    semantic_metrics,
     system,
 )
 
@@ -22,6 +23,7 @@ api_router.include_router(system.router)
 api_router.include_router(projects.router)
 api_router.include_router(datasets.router)
 api_router.include_router(schemas.router)
+api_router.include_router(semantic_metrics.router)
 api_router.include_router(quality.router)
 api_router.include_router(cleaning.router)
 api_router.include_router(analysis_specs.router)

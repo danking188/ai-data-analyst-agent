@@ -28,6 +28,7 @@ from app.persistence.orm.workflow_models import (
     ColumnSchemaRow,
     ConversationSummaryRow,
     QualityIssueRow,
+    SemanticMetricRow,
     UserDecisionRow,
     ValidationResultRow,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "ProjectMemberRow",
     "ProjectRow",
     "QualityIssueRow",
+    "SemanticMetricRow",
     "UserDecisionRow",
     "UserRow",
     "ValidationResultRow",

@@ -484,3 +484,55 @@ class ConversationSummaryRow(Base):
     structured_context_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     last_message_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+
+
+class SemanticMetricRow(Base):
+    """Version-bound, deterministic business metric definition.
+
+    Expressions are intentionally represented as a safe aggregation plus a source
+    column.  Arbitrary SQL/Python is never persisted or executed by the Agent.
+    """
+
+    __tablename__ = "semantic_metrics"
+    __table_args__ = (
+        CheckConstraint(
+            "aggregation IN ('sum', 'average', 'minimum', 'maximum', 'count', 'distinct_count')",
+            name="ck_semantic_metrics_aggregation",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'stale', 'archived')",
+            name="ck_semantic_metrics_status",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "dataset_version_id",
+            "name",
+            name="uq_semantic_metric_version_name",
+        ),
+        Index(
+            "ix_semantic_metrics_project_version",
+            "project_id",
+            "dataset_version_id",
+            "status",
+        ),
+    )
+
+    metric_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("projects.project_id", ondelete="RESTRICT"), nullable=False
+    )
+    dataset_version_id: Mapped[str] = mapped_column(
+        String(40),
+        ForeignKey("dataset_versions.version_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    source_column: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    aggregation: Mapped[str] = mapped_column(String(24), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    grain_dimensions_json: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)

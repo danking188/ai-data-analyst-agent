@@ -13,6 +13,7 @@ from app.api.schemas import (
     AssistantConversationUpdate,
     AssistantFeedback,
     AssistantFeedbackRequest,
+    AssistantMemory,
     AssistantMessage,
     AssistantMessageCreate,
     AssistantMessagePage,
@@ -20,6 +21,8 @@ from app.api.schemas import (
     AssistantRunTrace,
     AssistantToolCall,
     AssistantToolCallUpdate,
+    AssistantTraceCompareRequest,
+    AssistantTraceCompareResult,
     AssistantTraceReplay,
     AssistantTraceToolCall,
     AssistantTurnAccepted,
@@ -27,6 +30,9 @@ from app.api.schemas import (
 from app.core.config import Settings
 from app.domain.errors import DomainError, not_found, permission_denied, state_conflict
 from app.llm.actions import AssistantActionRegistry
+from app.llm.factory import get_llm_provider
+from app.llm.schemas import AssistantAnswer as LLMAssistantAnswer
+from app.llm.trace_compare import compare_candidate
 from app.llm.trace_replay import replay_agent_trace
 from app.persistence.orm.assistant_models import (
     AssistantConversationRow,
@@ -36,6 +42,7 @@ from app.persistence.orm.assistant_models import (
     LLMToolCallRow,
 )
 from app.persistence.orm.models import DatasetVersionRow, ProjectRow
+from app.persistence.orm.workflow_models import ConversationSummaryRow
 from app.persistence.repositories.assistant import AssistantRepository
 from app.persistence.repositories.audit import AuditRepository
 from app.persistence.repositories.jobs import JobRepository
@@ -90,6 +97,136 @@ class AssistantService:
             page_size=page_size,
             total=result.total,
             has_more=result.has_more,
+        )
+
+    def get_memory(
+        self, project_id: str, conversation_id: str, *, subject_id: str
+    ) -> AssistantMemory:
+        self._require_member(project_id, subject_id)
+        self.assistant.get_conversation(
+            project_id=project_id, conversation_id=conversation_id
+        )
+        row = self.session.scalar(
+            select(ConversationSummaryRow).where(
+                ConversationSummaryRow.project_id == project_id,
+                ConversationSummaryRow.conversation_id == conversation_id,
+            )
+        )
+        if row is None:
+            raise not_found("该会话尚未生成结构化记忆")
+        values = row.structured_context_json
+        return AssistantMemory(
+            conversation_id=conversation_id,
+            dataset_version_id=row.dataset_version_id,
+            memory_version=str(values.get("memory_version", "unknown")),
+            session_state=dict(values.get("session_state", {})),
+            user_preferences=list(values.get("user_preferences", [])),
+            verified_facts=list(values.get("verified_facts", [])),
+            pending_decisions=list(values.get("pending_decisions", [])),
+            updated_at=row.updated_at,
+        )
+
+    def compare_trace(
+        self,
+        project_id: str,
+        message_id: str,
+        payload: AssistantTraceCompareRequest,
+        *,
+        subject_id: str,
+    ) -> AssistantTraceCompareResult:
+        self._require_enabled(subject_id)
+        self._require_member(project_id, subject_id)
+        message = self.assistant.get_message(project_id=project_id, message_id=message_id)
+        run = self.assistant.latest_llm_run_for_message(message_id)
+        if run is None:
+            raise not_found("该消息没有可重放的 Agent 运行")
+        if message.parent_message_id is None:
+            raise state_conflict("该消息缺少原始用户问题")
+        question_row = self.assistant.get_message(
+            project_id=project_id, message_id=message.parent_message_id
+        )
+        calls = self.assistant.list_tool_calls(run.llm_run_id)
+        recorded_results = [
+            {
+                "tool_call_id": call.tool_call_id,
+                "tool_name": call.tool_name,
+                "result_resource_type": call.result_resource_type,
+                "result_resource_id": call.result_resource_id,
+                "result": call.result_json,
+            }
+            for call in calls
+            if call.status == "succeeded" and call.result_json is not None
+        ]
+        if not recorded_results:
+            raise state_conflict("该运行没有可用的已记录工具结果")
+        provider = get_llm_provider()
+        if provider is None or not self.settings.llm_model:
+            raise state_conflict("大语言模型服务当前不可用")
+        allowed_models = {self.settings.llm_model, *self.settings.llm_replay_allowed_models}
+        requested_models = {
+            candidate.model for candidate in payload.candidates if candidate.model is not None
+        }
+        disallowed = sorted(requested_models - allowed_models)
+        if disallowed:
+            raise DomainError(
+                "PERMISSION_DENIED",
+                "重放请求了未允许的模型",
+                403,
+                details={"models": disallowed},
+            )
+        original = None
+        if message.content_json and message.content_json.get("answer"):
+            original = LLMAssistantAnswer.model_validate(message.content_json["answer"])
+        results = [
+            compare_candidate(
+                provider=provider,
+                candidate=candidate,
+                default_model=self.settings.llm_model,
+                question=question_row.content or "",
+                recorded_tool_results=recorded_results,
+                original_answer=original,
+                timeout_seconds=self.settings.llm_timeout_seconds,
+                max_output_tokens=self.settings.llm_max_output_tokens,
+                max_input_chars=self.settings.llm_max_input_tokens * 4,
+            )
+            for candidate in payload.candidates
+        ]
+        return AssistantTraceCompareResult(
+            source_message_id=message_id,
+            source_run_id=run.llm_run_id,
+            replay_mode="counterfactual_no_tools",
+            candidates=results,
+        )
+
+    def clear_memory(
+        self,
+        project_id: str,
+        conversation_id: str,
+        *,
+        subject_id: str,
+        request_id: str,
+    ) -> None:
+        self._require_member(project_id, subject_id)
+        self.assistant.get_conversation(
+            project_id=project_id, conversation_id=conversation_id
+        )
+        row = self.session.scalar(
+            select(ConversationSummaryRow).where(
+                ConversationSummaryRow.project_id == project_id,
+                ConversationSummaryRow.conversation_id == conversation_id,
+            )
+        )
+        if row is not None:
+            self.session.delete(row)
+        self.audit.append(
+            action="assistant.memory_cleared",
+            result="success",
+            summary={"conversation_id": conversation_id},
+            project_id=project_id,
+            subject_id=subject_id,
+            object_type="assistant_conversation",
+            object_id=conversation_id,
+            request_id=request_id,
         )
 
     def create_conversation(

@@ -7,7 +7,12 @@ import {
   Search,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { AnalysisRole, ColumnSchema, SemanticType } from "../../api/contracts";
+import type {
+  AnalysisRole,
+  ColumnSchema,
+  SemanticAggregation,
+  SemanticType,
+} from "../../api/contracts";
 import { apiClient } from "../../api/client";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -19,7 +24,7 @@ import { useJobPolling } from "../../hooks/useJobPolling";
 import { formatDateTime, formatNumber, shortId } from "../../lib/format";
 import { queryKeys } from "../../lib/queryKeys";
 
-type DataTab = "preview" | "schema" | "diff";
+type DataTab = "preview" | "schema" | "metrics" | "diff";
 
 const semanticOptions: SemanticType[] = [
   "numeric", "categorical", "datetime", "boolean", "identifier", "text",
@@ -104,6 +109,76 @@ function SchemaEditor({ columns, revision }: { columns: ColumnSchema[]; revision
   );
 }
 
+function SemanticMetricEditor({ columns }: { columns: ColumnSchema[] }) {
+  const { project, version } = useAppContext();
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [sourceColumn, setSourceColumn] = useState("");
+  const [aggregation, setAggregation] = useState<SemanticAggregation>("sum");
+  const [unit, setUnit] = useState("");
+  const queryKey = ["projects", project?.project_id, "semantic-metrics", version?.version_id];
+  const metricsQuery = useQuery({
+    queryKey,
+    queryFn: () => apiClient.listSemanticMetrics(project!.project_id, version!.version_id),
+    enabled: Boolean(project && version),
+  });
+  const createMetric = useMutation({
+    mutationFn: () => apiClient.createSemanticMetric(project!.project_id, {
+      dataset_version_id: version!.version_id,
+      name: name.trim(),
+      description: description.trim(),
+      source_column: aggregation === "count" ? null : sourceColumn,
+      aggregation,
+      unit: unit.trim() || null,
+      grain_dimensions: [],
+    }),
+    onSuccess: async () => {
+      setName("");
+      setDescription("");
+      setUnit("");
+      pushToast("语义指标已保存");
+      await queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (error) =>
+      pushToast(error instanceof Error ? error.message : "指标保存失败", "error"),
+  });
+  const sourceColumns = columns.filter(
+    (column) =>
+      !column.sensitive
+      && (
+        aggregation === "distinct_count"
+        || ["integer", "float"].includes(column.physical_type)
+      ),
+  );
+  const needsSource = aggregation !== "count";
+
+  return (
+    <div className="form-stack">
+      <div className="schema-toolbar">
+        <div>
+          <h3>业务语义指标</h3>
+          <p>指标绑定当前数据版本，Agent 只能使用已校验的聚合定义。</p>
+        </div>
+      </div>
+      <div className="form-grid two-column">
+        <label className="field"><span>指标名称</span><input onChange={(event) => setName(event.target.value)} value={name} /></label>
+        <label className="field"><span>聚合方式</span><select onChange={(event) => setAggregation(event.target.value as SemanticAggregation)} value={aggregation}><option value="sum">求和</option><option value="average">平均</option><option value="minimum">最小值</option><option value="maximum">最大值</option><option value="count">记录数</option><option value="distinct_count">去重计数</option></select></label>
+        <label className="field"><span>来源字段</span><select disabled={!needsSource} onChange={(event) => setSourceColumn(event.target.value)} value={sourceColumn}><option value="">请选择</option>{sourceColumns.map((column) => <option key={column.name}>{column.name}</option>)}</select></label>
+        <label className="field"><span>单位（可选）</span><input onChange={(event) => setUnit(event.target.value)} value={unit} /></label>
+      </div>
+      <label className="field"><span>口径说明</span><textarea onChange={(event) => setDescription(event.target.value)} rows={2} value={description} /></label>
+      <Button disabled={!name.trim() || !description.trim() || (needsSource && !sourceColumn) || createMetric.isPending} onClick={() => createMetric.mutate()} variant="primary">
+        {createMetric.isPending ? "正在保存…" : "创建指标"}
+      </Button>
+      {metricsQuery.isLoading ? <LoadingBlock rows={3} /> : (
+        <div className="table-wrap"><table className="schema-table"><thead><tr><th>指标</th><th>定义</th><th>来源</th><th>单位</th><th>状态</th></tr></thead><tbody>{metricsQuery.data?.items.map((metric) => <tr key={metric.metric_id}><td><strong>{metric.name}</strong></td><td>{metric.description}</td><td>{metric.aggregation}{metric.source_column ? `(${metric.source_column})` : ""}</td><td>{metric.unit ?? "—"}</td><td><StatusBadge status={metric.status} /></td></tr>)}</tbody></table></div>
+      )}
+    </div>
+  );
+}
+
 export function DataPage() {
   const { project, dataset, version, setVersion } = useAppContext();
   const [tab, setTab] = useState<DataTab>("preview");
@@ -125,7 +200,7 @@ export function DataPage() {
   const schemaQuery = useQuery({
     queryKey: queryKeys.schema(project?.project_id ?? "none", version?.version_id ?? "none"),
     queryFn: () => apiClient.getDatasetSchema(project!.project_id, version!.version_id),
-    enabled: Boolean(project && version && tab === "schema"),
+    enabled: Boolean(project && version && ["schema", "metrics"].includes(tab)),
   });
   const comparisonMutation = useMutation({
     mutationFn: () => apiClient.compareDatasetVersions(
@@ -192,6 +267,7 @@ export function DataPage() {
           <div className="tabbar" role="tablist">
             <button aria-selected={tab === "preview"} className={tab === "preview" ? "is-active" : ""} onClick={() => setTab("preview")} role="tab">数据预览</button>
             <button aria-selected={tab === "schema"} className={tab === "schema" ? "is-active" : ""} onClick={() => setTab("schema")} role="tab">字段 Schema</button>
+            <button aria-selected={tab === "metrics"} className={tab === "metrics" ? "is-active" : ""} onClick={() => setTab("metrics")} role="tab">语义指标</button>
             <button aria-selected={tab === "diff"} className={tab === "diff" ? "is-active" : ""} onClick={() => setTab("diff")} role="tab">版本差异</button>
             {tab === "preview" ? (
               <label className="search-field"><Search size={16} /><input aria-label="搜索列名" onChange={(event) => setSearch(event.target.value)} placeholder="搜索列名" value={search} /></label>
@@ -222,6 +298,9 @@ export function DataPage() {
             ) : null}
             {tab === "schema" ? schemaQuery.isLoading ? <LoadingBlock rows={8} /> : schemaQuery.data ? (
               <SchemaEditor columns={schemaQuery.data.columns} revision={schemaQuery.data.revision} />
+            ) : null : null}
+            {tab === "metrics" ? schemaQuery.isLoading ? <LoadingBlock rows={8} /> : schemaQuery.data ? (
+              <SemanticMetricEditor columns={schemaQuery.data.columns} />
             ) : null : null}
             {tab === "diff" ? (
               versionsQuery.data && versionsQuery.data.items.length > 1 ? (

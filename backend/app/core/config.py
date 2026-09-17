@@ -89,6 +89,7 @@ class Settings:
     llm_retention_days: int
     llm_archive_inactive_days: int
     llm_canary_subjects: tuple[str, ...]
+    llm_replay_allowed_models: tuple[str, ...]
 
     @property
     def auth_enabled(self) -> bool:
@@ -185,6 +186,11 @@ def get_settings() -> Settings:
             subject.strip()
             for subject in os.getenv("LLM_CANARY_SUBJECTS", "").split(",")
             if subject.strip()
+        ),
+        llm_replay_allowed_models=tuple(
+            model.strip()
+            for model in os.getenv("LLM_REPLAY_ALLOWED_MODELS", "").split(",")
+            if model.strip()
         ),
     )
     if settings.auth_mode not in {"dev_token", "jwt"}:

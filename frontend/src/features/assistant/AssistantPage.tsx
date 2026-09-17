@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
 import type {
   AssistantMessage,
+  AssistantTraceCompareResult,
   AssistantToolCall,
   AssistantTraceReplay,
 } from "../../api/contracts";
@@ -402,7 +403,11 @@ export function AssistantPage() {
         />
       ) : null}
       {selectedTrace ? (
-        <TraceDrawer onClose={() => setSelectedTrace(null)} replay={selectedTrace} />
+        <TraceDrawer
+          onClose={() => setSelectedTrace(null)}
+          projectId={project!.project_id}
+          replay={selectedTrace}
+        />
       ) : null}
     </>
   );
@@ -683,10 +688,17 @@ function CitationDrawer({
 function TraceDrawer({
   replay,
   onClose,
+  projectId,
 }: {
   replay: AssistantTraceReplay;
   onClose: () => void;
+  projectId: string;
 }) {
+  const [comparison, setComparison] = useState<AssistantTraceCompareResult | null>(null);
+  const compare = useMutation({
+    mutationFn: () => apiClient.compareAssistantTrace(projectId, replay.trace.message_id),
+    onSuccess: setComparison,
+  });
   return (
     <aside className="assistant-citation-drawer assistant-trace-drawer">
       <header>
@@ -694,6 +706,9 @@ function TraceDrawer({
         <button aria-label="关闭运行轨迹" className="icon-button" onClick={onClose}><X size={18} /></button>
       </header>
       <strong>{replay.verified ? "校验通过" : "发现不一致"} · {replay.trace.llm_run_id}</strong>
+      <Button disabled={compare.isPending} onClick={() => compare.mutate()} size="sm">
+        {compare.isPending ? "正在生成候选…" : "对比当前 Prompt 与证据审计 Prompt"}
+      </Button>
       <dl>
         <div><dt>模型</dt><dd>{replay.trace.model}</dd></div>
         <div><dt>状态</dt><dd>{replay.trace.status} → {replay.replayed_state}</dd></div>
@@ -712,6 +727,22 @@ function TraceDrawer({
         <summary>查看完整持久化轨迹</summary>
         <pre>{JSON.stringify(replay.trace.context_manifest, null, 2)}</pre>
       </details>
+      {comparison ? (
+        <section className="trace-checks" aria-label="候选回答对比">
+          {comparison.candidates.map((candidate) => (
+            <article key={candidate.label}>
+              <strong>{candidate.label} · {candidate.model}</strong>
+              <p>{candidate.answer.summary}</p>
+              <small>
+                引用{candidate.citation_valid ? "通过" : "失败"} ·
+                相似度 {Math.round(candidate.similarity_to_original * 100)}% ·
+                {(candidate.latency_ms / 1000).toFixed(2)} 秒
+              </small>
+            </article>
+          ))}
+        </section>
+      ) : null}
+      {compare.error ? <p className="form-error">{compare.error.message}</p> : null}
     </aside>
   );
 }

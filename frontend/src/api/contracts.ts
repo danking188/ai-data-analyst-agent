@@ -161,6 +161,40 @@ export interface DatasetSchema {
   columns: ColumnSchema[];
 }
 
+export type SemanticAggregation =
+  | "sum"
+  | "average"
+  | "minimum"
+  | "maximum"
+  | "count"
+  | "distinct_count";
+
+export interface SemanticMetric {
+  metric_id: string;
+  project_id: string;
+  dataset_version_id: string;
+  name: string;
+  description: string;
+  source_column: string | null;
+  aggregation: SemanticAggregation;
+  unit: string | null;
+  grain_dimensions: string[];
+  status: "active" | "stale" | "archived";
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SemanticMetricInput {
+  dataset_version_id: string;
+  name: string;
+  description: string;
+  source_column: string | null;
+  aggregation: SemanticAggregation;
+  unit: string | null;
+  grain_dimensions: string[];
+}
+
 export interface SchemaPatch {
   changes: Array<{
     column: string;
@@ -508,5 +542,23 @@ export interface AssistantTraceReplay {
     name: "state_transitions" | "run_terminal_state" | "tool_call_count" | "tool_terminal_states";
     passed: boolean;
     details: Record<string, unknown>;
+  }>;
+}
+
+export interface AssistantTraceCompareResult {
+  source_message_id: string;
+  source_run_id: string;
+  replay_mode: "counterfactual_no_tools";
+  candidates: Array<{
+    label: string;
+    model: string;
+    prompt_variant: string;
+    answer: AssistantAnswer;
+    citation_valid: boolean;
+    validation_error: string | null;
+    similarity_to_original: number;
+    input_tokens: number;
+    output_tokens: number;
+    latency_ms: number;
   }>;
 }
