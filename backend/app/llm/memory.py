@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -42,8 +42,12 @@ class StructuredMemoryManager:
         previous = row.structured_context_json if row else {}
         version_changed = row is not None and row.dataset_version_id != dataset_version_id
         preferences = self._preferences(messages, previous.get("user_preferences", []), now)
-        facts = [] if version_changed else self._verified_facts(conversation_id, dataset_version_id)
-        decisions = self._pending_decisions(conversation_id, dataset_version_id)
+        facts = (
+            []
+            if version_changed
+            else self._verified_facts(conversation_id, dataset_version_id, now)
+        )
+        decisions = self._pending_decisions(conversation_id, dataset_version_id, now)
         memory = {
             "memory_version": MEMORY_VERSION,
             "session_state": {
@@ -110,7 +114,7 @@ class StructuredMemoryManager:
         )[:6000]
 
     def _verified_facts(
-        self, conversation_id: str, dataset_version_id: str | None
+        self, conversation_id: str, dataset_version_id: str | None, now: datetime
     ) -> list[dict[str, Any]]:
         rows = list(
             self.session.execute(
@@ -121,6 +125,9 @@ class StructuredMemoryManager:
                     AssistantMessageRow.conversation_id == conversation_id,
                     LLMToolCallRow.status == "succeeded",
                     LLMToolCallRow.result_resource_id.is_not(None),
+                    LLMToolCallRow.created_at > now - timedelta(days=30),
+                    LLMRunRow.context_manifest_json["dataset_version_id"].as_string()
+                    == dataset_version_id,
                 )
                 .order_by(LLMToolCallRow.created_at.desc())
                 .limit(50)
@@ -142,7 +149,7 @@ class StructuredMemoryManager:
         ]
 
     def _pending_decisions(
-        self, conversation_id: str, dataset_version_id: str | None
+        self, conversation_id: str, dataset_version_id: str | None, now: datetime
     ) -> list[dict[str, Any]]:
         rows = list(
             self.session.scalars(
@@ -152,6 +159,9 @@ class StructuredMemoryManager:
                 .where(
                     AssistantMessageRow.conversation_id == conversation_id,
                     LLMToolCallRow.status.in_({"proposed", "approved"}),
+                    LLMToolCallRow.created_at > now - timedelta(days=1),
+                    LLMRunRow.context_manifest_json["dataset_version_id"].as_string()
+                    == dataset_version_id,
                 )
                 .order_by(LLMToolCallRow.created_at.desc())
                 .limit(20)
@@ -174,15 +184,20 @@ class StructuredMemoryManager:
     def _preferences(
         messages: list[AssistantMessageRow],
         existing: list[dict[str, Any]],
-        now: Any,
+        now: datetime,
     ) -> list[dict[str, Any]]:
         retained = {
             str(item.get("key")): item
             for item in existing
             if item.get("trust") == "explicit_user_preference"
+            and StructuredMemoryManager._preference_is_active(item, now)
         }
         for message in messages:
-            if message.role != "user" or not message.content:
+            if (
+                message.role != "user"
+                or not message.content
+                or message.created_at + timedelta(days=90) <= now
+            ):
                 continue
             lowered = message.content.lower()
             candidates: dict[str, str] = {}
@@ -202,7 +217,16 @@ class StructuredMemoryManager:
                     "value": value,
                     "source_id": message.message_id,
                     "created_at": message.created_at.isoformat(),
-                    "expires_at": (now + timedelta(days=90)).isoformat(),
+                    "expires_at": (message.created_at + timedelta(days=90)).isoformat(),
                     "trust": "explicit_user_preference",
                 }
         return list(retained.values())
+
+    @staticmethod
+    def _preference_is_active(item: dict[str, Any], now: datetime) -> bool:
+        try:
+            created_at = datetime.fromisoformat(item["created_at"])
+            expires_at = datetime.fromisoformat(item["expires_at"])
+            return now < min(expires_at, created_at + timedelta(days=90))
+        except (KeyError, TypeError, ValueError):
+            return False
