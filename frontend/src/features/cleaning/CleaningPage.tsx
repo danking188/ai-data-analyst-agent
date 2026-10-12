@@ -144,14 +144,18 @@ export function CleaningPage() {
       return apiClient.updateCleaningPlan(project!.project_id, plan, plan.name, operations);
     },
     onSuccess: (next) => { setPlan(next); pushToast("清洗计划草稿已保存"); },
+    onError: (error) => pushToast(error instanceof Error ? error.message : "清洗计划保存失败", "error"),
   });
   const previewMutation = useMutation({
     mutationFn: async () => {
-      const current = plan ?? await apiClient.createCleaningPlan(project!.project_id, version!.version_id, operations);
+      const current = plan
+        ? await apiClient.updateCleaningPlan(project!.project_id, plan, plan.name, operations)
+        : await apiClient.createCleaningPlan(project!.project_id, version!.version_id, operations);
       setPlan(current);
       return apiClient.previewCleaningPlan(project!.project_id, current.plan_id);
     },
     onSuccess: (job) => setPreviewJobId(job.job_id),
+    onError: (error) => pushToast(error instanceof Error ? error.message : "清洗预览生成失败", "error"),
   });
   const previewPolling = useJobPolling(previewJobId, async () => {
     const refreshed = await plansQuery.refetch();
@@ -189,13 +193,15 @@ export function CleaningPage() {
   if (plansQuery.isLoading) return <LoadingBlock rows={9} />;
 
   const previewReady = Boolean(plan?.preview_artifact_id || previewPolling.job?.status === "succeeded");
+  const canEdit = !plan || plan.status === "draft";
+  const draftBusy = saveMutation.isPending || previewMutation.isPending || Boolean(previewPolling.job && !previewPolling.isTerminal);
   return (
     <div className="workflow-page cleaning-page">
       <header className="workflow-heading">
         <div><h1>清洗计划</h1><p>v{version.version_number} · {version.source_file_name}</p></div>
         <div className="heading-actions">
-          <Button disabled={!operations.length || saveMutation.isPending || plan?.status !== "draft"} icon={<Save size={16} />} onClick={() => saveMutation.mutate()}>保存草稿</Button>
-          <Button disabled={!operations.length || previewMutation.isPending || plan?.status !== "draft"} icon={<Eye size={16} />} onClick={() => previewMutation.mutate()} variant="primary">
+          <Button disabled={!operations.length || draftBusy || !canEdit} icon={<Save size={16} />} onClick={() => saveMutation.mutate()}>保存草稿</Button>
+          <Button disabled={!operations.length || draftBusy || !canEdit} icon={<Eye size={16} />} onClick={() => previewMutation.mutate()} variant="primary">
             {previewPolling.job && !previewPolling.isTerminal ? `生成中 ${previewPolling.job.progress}%` : "生成预览"}
           </Button>
         </div>

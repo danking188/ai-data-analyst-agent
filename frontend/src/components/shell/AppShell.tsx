@@ -66,12 +66,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [project, projectsQuery.data, setProject]);
 
   useEffect(() => {
-    if (!dataset && datasetsQuery.data?.items[0]) setDataset(datasetsQuery.data.items[0]);
-  }, [dataset, datasetsQuery.data, setDataset]);
+    if (!dataset && datasetsQuery.data?.items[0]) {
+      const active = datasetsQuery.data.items.find((item) => item.current_version_id === project?.current_dataset_version_id);
+      setDataset(active ?? datasetsQuery.data.items[0]);
+    }
+  }, [dataset, datasetsQuery.data, project?.current_dataset_version_id, setDataset]);
 
   useEffect(() => {
-    if (!version && versionsQuery.data?.items[0]) setVersion(versionsQuery.data.items[0]);
-  }, [setVersion, version, versionsQuery.data]);
+    if (!version && versionsQuery.data?.items[0]) {
+      const active = versionsQuery.data.items.find((item) => item.version_id === dataset?.current_version_id);
+      setVersion(active ?? versionsQuery.data.items[0]);
+    }
+  }, [dataset?.current_version_id, setVersion, version, versionsQuery.data]);
 
   useEffect(() => setMobileOpen(false), [location.pathname]);
 

@@ -76,6 +76,15 @@ function defaultForm(versionId: string, schema: DatasetSchema): AnalysisSpecInpu
   };
 }
 
+function specInput(input: AnalysisSpecInput): AnalysisSpecInput {
+  const { name, dataset_version_id, task, target, entity_key, time_column,
+    prediction_time_description, split_strategy, group_column, metrics,
+    included_columns, excluded_columns, random_seed, causal_interpretation_allowed } = input;
+  return { name, dataset_version_id, task, target, entity_key, time_column,
+    prediction_time_description, split_strategy, group_column, metrics,
+    included_columns, excluded_columns, random_seed, causal_interpretation_allowed };
+}
+
 export function ExplorePage() {
   const { project, version } = useAppContext();
   const { pushToast } = useToast();
@@ -103,24 +112,31 @@ export function ExplorePage() {
     queryFn: () => apiClient.listArtifacts(project!.project_id, activeRun!.run_id), enabled: Boolean(project && activeRun),
   });
   useEffect(() => {
-    if (!form && version && schemaQuery.data) {
+    if (version && schemaQuery.data && !specsQuery.isPending && form?.dataset_version_id !== version.version_id) {
       const first = specsQuery.data?.items[0];
       setSpec(first ?? null);
-      setForm(first ? { ...first } : defaultForm(version.version_id, schemaQuery.data));
+      setForm(first ? specInput(first) : defaultForm(version.version_id, schemaQuery.data));
     }
-  }, [form, schemaQuery.data, specsQuery.data?.items, version]);
+  }, [form, schemaQuery.data, specsQuery.data?.items, specsQuery.isPending, version]);
+  const persistForm = () => spec?.status === "draft"
+    ? apiClient.updateAnalysisSpec(project!.project_id, spec, specInput(form!))
+    : apiClient.createAnalysisSpec(project!.project_id, specInput(form!));
   const saveMutation = useMutation({
-    mutationFn: () => spec ? apiClient.updateAnalysisSpec(project!.project_id, spec, form!) : apiClient.createAnalysisSpec(project!.project_id, form!),
+    mutationFn: persistForm,
     onSuccess: (next) => { setSpec(next); pushToast("AnalysisSpec 草稿已保存"); },
+    onError: (error) => pushToast(error instanceof Error ? error.message : "分析参数保存失败", "error"),
   });
   const runMutation = useMutation({
     mutationFn: async () => {
-      let current = spec ?? await apiClient.createAnalysisSpec(project!.project_id, form!);
+      let current = spec?.status === "confirmed" && JSON.stringify(specInput(spec)) === JSON.stringify(specInput(form!))
+        ? spec
+        : await persistForm();
       if (current.status !== "confirmed") current = await apiClient.confirmAnalysisSpec(project!.project_id, current.spec_id);
       setSpec(current);
       return apiClient.createRun(project!.project_id, current.spec_id, current.dataset_version_id);
     },
     onSuccess: (job) => setRunJobId(job.job_id),
+    onError: (error) => pushToast(error instanceof Error ? error.message : "分析运行失败", "error"),
   });
   useJobPolling(runJobId, () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.runs(project!.project_id) });
@@ -141,11 +157,11 @@ export function ExplorePage() {
     });
   };
   if (!version) return <EmptyState title="暂无分析数据" description="请先上传并确认一个数据版本。" />;
-  if (!form || specsQuery.isLoading || schemaQuery.isLoading) return <LoadingBlock rows={8} />;
+  if (!form || form.dataset_version_id !== version.version_id || specsQuery.isLoading || schemaQuery.isLoading) return <LoadingBlock rows={8} />;
   const columns = schemaQuery.data?.columns ?? [];
   return (
     <div className="workflow-page explore-page">
-      <header className="workflow-heading"><div><h1>分析设计</h1><p>{version.source_file_name} · v{version.version_number} · {columns.length} 个字段</p></div><Button disabled={saveMutation.isPending || spec?.status === "confirmed"} icon={<Save size={16} />} onClick={() => saveMutation.mutate()}>保存草稿</Button></header>
+      <header className="workflow-heading"><div><h1>分析设计</h1><p>{version.source_file_name} · v{version.version_number} · {columns.length} 个字段</p></div><Button disabled={saveMutation.isPending || runMutation.isPending} icon={<Save size={16} />} onClick={() => saveMutation.mutate()}>保存草稿</Button></header>
       <div className="wizard-layout">
         <section className="wizard-main">
           <nav className="wizard-steps" aria-label="分析设置步骤">{["分析目标", "字段角色", "拆分策略", "确认运行"].map((label, index) => <button className={step === index + 1 ? "is-active" : step > index + 1 ? "is-done" : ""} key={label} onClick={() => setStep(index + 1)}><span>{step > index + 1 ? <Check size={15} /> : index + 1}</span>{label}</button>)}</nav>
@@ -170,7 +186,7 @@ export function ExplorePage() {
         <aside className="run-confirm">
           <h2>运行确认</h2><h3>真实数据约束</h3><ul><li>输入绑定数据版本 {version.version_id}。</li><li>敏感字段不会进入自动分析图表。</li><li>候选模型仅在训练分区内交叉验证，保留集不参与选择。</li></ul>
           <dl><div><dt>任务类型</dt><dd>{taskLabels[form.task]}</dd></div><div><dt>目标字段</dt><dd>{form.target ?? "未选择"}</dd></div><div><dt>参与字段</dt><dd>{form.included_columns.length} 个</dd></div><div><dt>拆分策略</dt><dd>{form.split_strategy}</dd></div><div><dt>评估指标</dt><dd>{form.metrics.map((value) => availableMetrics.find((item) => item.value === value)?.label ?? value).join(", ")}</dd></div></dl>
-          <Button disabled={runMutation.isPending || !form.target || !form.metrics.length || !form.included_columns.length} icon={<Play size={16} />} onClick={() => runMutation.mutate()} variant="primary">确认并运行</Button>
+          <Button disabled={saveMutation.isPending || runMutation.isPending || !form.target || !form.metrics.length || !form.included_columns.length} icon={<Play size={16} />} onClick={() => runMutation.mutate()} variant="primary">确认并运行</Button>
         </aside>
       </div>
       <RunProgress run={activeRun} onCancel={() => cancelMutation.mutate()} />
