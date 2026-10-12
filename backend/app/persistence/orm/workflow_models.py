@@ -182,10 +182,14 @@ class CleaningOperationRow(Base):
         ),
     )
 
-    operation_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    # The API contract only promises uniqueness within a cleaning plan, so the identifier a
+    # client supplies is scoped by plan_id instead of being a global primary key.
     plan_id: Mapped[str] = mapped_column(
-        String(40), ForeignKey("cleaning_plans.plan_id", ondelete="CASCADE"), nullable=False
+        String(40),
+        ForeignKey("cleaning_plans.plan_id", ondelete="CASCADE"),
+        primary_key=True,
     )
+    operation_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     operation: Mapped[str] = mapped_column(String(40), nullable=False)
     column_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -989,6 +989,7 @@ export const mockApi = {
           },
           citation_valid: true,
           validation_error: null,
+          correction_attempted: false,
           similarity_to_original: 1,
           input_tokens: 100,
           output_tokens: 30,

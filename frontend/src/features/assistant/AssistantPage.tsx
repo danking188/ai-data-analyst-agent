@@ -11,6 +11,7 @@ import {
   MessageSquarePlus,
   RefreshCw,
   Pencil,
+  RotateCcw,
   Send,
   ThumbsDown,
   ThumbsUp,
@@ -20,6 +21,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../../api/client";
 import type {
+  AssistantConversation,
   AssistantMessage,
   AssistantTraceCompareResult,
   AssistantToolCall,
@@ -61,8 +63,11 @@ export function AssistantPage() {
   });
 
   useEffect(() => {
-    if (!selectedConversationId && conversationsQuery.data?.items[0]) {
-      setSelectedConversationId(conversationsQuery.data.items[0].conversation_id);
+    // Never drop the user into an archived conversation; when every conversation is archived
+    // the page keeps the empty state and waits for an explicit click.
+    const firstActive = conversationsQuery.data?.items.find((item) => item.status === "active");
+    if (!selectedConversationId && firstActive) {
+      setSelectedConversationId(firstActive.conversation_id);
     }
   }, [conversationsQuery.data, selectedConversationId]);
 
@@ -86,8 +91,25 @@ export function AssistantPage() {
     }
   }, [messagesQuery.data?.items.length]);
 
-  const selectedConversation = conversationsQuery.data?.items.find(
+  const conversations = conversationsQuery.data?.items ?? [];
+  const activeConversations = conversations.filter((item) => item.status === "active");
+  const archivedConversations = conversations.filter((item) => item.status !== "active");
+  const selectedConversation = conversations.find(
     (item) => item.conversation_id === selectedConversationId,
+  );
+  const renderConversation = (conversation: AssistantConversation) => (
+    <button
+      className={conversation.conversation_id === selectedConversationId ? "is-active" : ""}
+      key={conversation.conversation_id}
+      onClick={() => setSelectedConversationId(conversation.conversation_id)}
+    >
+      <strong>{conversation.title}</strong>
+      <span>
+        {conversation.dataset_version_id ? "已绑定数据" : "无数据版本"}
+        {conversation.status === "archived" ? <StatusBadge status="archived" /> : null}
+        <ChevronRight size={14} />
+      </span>
+    </button>
   );
   const messages = messagesQuery.data?.items ?? [];
   const toolCalls = useMemo(
@@ -210,16 +232,21 @@ export function AssistantPage() {
     onError: (error) => pushToast(error instanceof Error ? error.message : "轨迹回放失败", "error"),
   });
   const archiveConversation = useMutation({
-    mutationFn: () =>
+    mutationFn: (status: "active" | "archived") =>
       apiClient.updateAssistantConversation(project!.project_id, selectedConversationId!, {
-        status: "archived",
+        status,
       }),
-    onSuccess: async () => {
-      setSelectedConversationId(null);
+    onSuccess: async (_conversation, status) => {
+      // Archiving releases the selection so the next active conversation is picked up; the
+      // server stays the source of truth, so the list is refetched rather than patched.
+      if (status === "archived") setSelectedConversationId(null);
+      pushToast(status === "archived" ? "会话已归档" : "会话已恢复");
       await queryClient.invalidateQueries({
         queryKey: queryKeys.assistantConversations(project!.project_id),
       });
     },
+    onError: (error) =>
+      pushToast(error instanceof Error ? error.message : "会话状态更新失败", "error"),
   });
 
   if (capabilitiesQuery.isLoading) return <LoadingBlock rows={4} />;
@@ -254,23 +281,17 @@ export function AssistantPage() {
           <aside className="assistant-conversations" aria-label="分析会话">
             <header>
               <h2>会话</h2>
-              <span>{conversationsQuery.data?.total ?? 0}</span>
+              <span>{activeConversations.length} 进行中 · {archivedConversations.length} 已归档</span>
             </header>
             {conversationsQuery.isLoading ? <LoadingBlock rows={3} /> : null}
             <div className="assistant-conversation-list">
-              {conversationsQuery.data?.items.map((conversation) => (
-                <button
-                  className={conversation.conversation_id === selectedConversationId ? "is-active" : ""}
-                  key={conversation.conversation_id}
-                  onClick={() => setSelectedConversationId(conversation.conversation_id)}
-                >
-                  <strong>{conversation.title}</strong>
-                  <span>
-                    {conversation.dataset_version_id ? "已绑定数据" : "无数据版本"}
-                    <ChevronRight size={14} />
-                  </span>
-                </button>
-              ))}
+              {activeConversations.map(renderConversation)}
+              {archivedConversations.length ? (
+                <>
+                  <h3>已归档会话</h3>
+                  {archivedConversations.map(renderConversation)}
+                </>
+              ) : null}
             </div>
           </aside>
 
@@ -282,13 +303,21 @@ export function AssistantPage() {
                   <span>{selectedConversation.dataset_version_id ?? "未绑定数据版本"}</span>
                 </div>
                 <button
-                  aria-label="归档会话"
+                  aria-label={selectedConversation.status === "archived" ? "恢复会话" : "归档会话"}
                   className="icon-button"
                   disabled={archiveConversation.isPending}
-                  onClick={() => archiveConversation.mutate()}
-                  title="归档会话"
+                  onClick={() =>
+                    archiveConversation.mutate(
+                      selectedConversation.status === "archived" ? "active" : "archived",
+                    )
+                  }
+                  title={selectedConversation.status === "archived" ? "恢复会话" : "归档会话"}
                 >
-                  <Archive size={17} />
+                  {selectedConversation.status === "archived" ? (
+                    <RotateCcw size={17} />
+                  ) : (
+                    <Archive size={17} />
+                  )}
                 </button>
               </header>
             ) : null}
@@ -734,10 +763,11 @@ function TraceDrawer({
               <strong>{candidate.label} · {candidate.model}</strong>
               <p>{candidate.answer.summary}</p>
               <small>
-                引用{candidate.citation_valid ? "通过" : "失败"} ·
+                引用{candidate.citation_valid ? "通过" : candidate.correction_attempted === true ? "失败（已重试并纠正）" : "失败"} ·
                 相似度 {Math.round(candidate.similarity_to_original * 100)}% ·
                 {(candidate.latency_ms / 1000).toFixed(2)} 秒
               </small>
+              {candidate.citation_valid ? null : <small className="form-error">{candidate.validation_error ?? "未返回校验原因"}</small>}
             </article>
           ))}
         </section>

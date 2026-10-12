@@ -388,3 +388,115 @@ def test_failed_cleaning_execution_never_activates_result_version(
         version for version in versions if version["version_id"] == failed_plan["result_version_id"]
     )
     assert failed_version["status"] == "failed"
+
+
+def test_reusing_an_operation_id_across_plans_is_allowed(
+    app_client: TestClient,
+    auth_headers: dict[str, str],
+    create_project,
+) -> None:
+    """F04: operation_id is only unique within a plan, so a second plan may reuse it.
+
+    The table used to declare a global primary key, which turned this legal request into
+    HTTP 500 / INTERNAL_ERROR.
+    """
+    project = create_project(key="cleaning-shared-operation-id")
+    project_id = str(project["project_id"])
+    version_id = _upload_source_version(app_client, project_id, auth_headers)
+    plans_url = f"/api/v1/projects/{project_id}/cleaning-plans"
+
+    first = app_client.post(
+        plans_url,
+        headers={**auth_headers, "Idempotency-Key": "cleaning-shared-id-first"},
+        json={
+            "source_version_id": version_id,
+            "name": "计划 A",
+            "operations": [_operation(operation_id="cleanop_shared")],
+        },
+    )
+    assert first.status_code == 201, first.text
+    first_plan = first.json()
+
+    second = app_client.post(
+        plans_url,
+        headers={**auth_headers, "Idempotency-Key": "cleaning-shared-id-second"},
+        json={
+            "source_version_id": version_id,
+            "name": "计划 B",
+            "operations": [
+                _operation(operation_id="cleanop_shared"),
+                {
+                    **_operation(operation_id="cleanop_second_step"),
+                    "operation": "drop_duplicates",
+                    "column": None,
+                    "parameters": {"columns": ["name", "value"], "keep": "first"},
+                },
+            ],
+        },
+    )
+    assert second.status_code == 201, second.text
+    second_plan = second.json()
+    assert second_plan["plan_id"] != first_plan["plan_id"]
+
+    # Both plans keep their own operations, and the reused identifier is echoed unchanged.
+    assert [item["operation_id"] for item in first_plan["operations"]] == ["cleanop_shared"]
+    assert [item["operation_id"] for item in second_plan["operations"]] == [
+        "cleanop_shared",
+        "cleanop_second_step",
+    ]
+
+    reread_first = app_client.get(
+        f"{plans_url}/{first_plan['plan_id']}",
+        headers=auth_headers,
+    ).json()
+    reread_second = app_client.get(
+        f"{plans_url}/{second_plan['plan_id']}",
+        headers=auth_headers,
+    ).json()
+    assert [item["operation_id"] for item in reread_first["operations"]] == ["cleanop_shared"]
+    assert [item["operation_id"] for item in reread_second["operations"]] == [
+        "cleanop_shared",
+        "cleanop_second_step",
+    ]
+
+    # Removing the shared operation from the second plan must not touch the first plan.
+    updated = app_client.patch(
+        f"{plans_url}/{second_plan['plan_id']}",
+        headers={**auth_headers, "If-Match": '"1"'},
+        json={"operations": [{**_operation(operation_id="cleanop_second_step")}]},
+    )
+    assert updated.status_code == 200, updated.text
+    assert [item["operation_id"] for item in updated.json()["operations"]] == [
+        "cleanop_second_step"
+    ]
+    survivor = app_client.get(f"{plans_url}/{first_plan['plan_id']}", headers=auth_headers).json()
+    assert [item["operation_id"] for item in survivor["operations"]] == ["cleanop_shared"]
+
+
+def test_duplicate_operation_id_within_one_plan_is_still_rejected(
+    app_client: TestClient,
+    auth_headers: dict[str, str],
+    create_project,
+) -> None:
+    """F04: widening the constraint must not drop the per-plan uniqueness guarantee."""
+    project = create_project(key="cleaning-duplicate-operation-id")
+    project_id = str(project["project_id"])
+    version_id = _upload_source_version(app_client, project_id, auth_headers)
+    url = f"/api/v1/projects/{project_id}/cleaning-plans"
+
+    duplicated = app_client.post(
+        url,
+        headers={**auth_headers, "Idempotency-Key": "cleaning-duplicate-op"},
+        json={
+            "source_version_id": version_id,
+            "operations": [
+                _operation(operation_id="cleanop_duplicated"),
+                {
+                    **_operation(operation_id="cleanop_duplicated"),
+                    "column": "name",
+                },
+            ],
+        },
+    )
+    assert duplicated.status_code == 422
+    assert duplicated.json()["error"]["code"] == "VALIDATION_ERROR"

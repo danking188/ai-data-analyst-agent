@@ -1779,6 +1779,7 @@ export interface components {
             answer: components["schemas"]["AssistantAnswer"];
             citation_valid: boolean;
             validation_error: string | null;
+            correction_attempted: boolean;
             similarity_to_original: number;
             input_tokens: number;
             output_tokens: number;

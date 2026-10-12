@@ -556,6 +556,8 @@ export interface AssistantTraceCompareResult {
     answer: AssistantAnswer;
     citation_valid: boolean;
     validation_error: string | null;
+    /** Absent on responses from a backend that predates the controlled correction. */
+    correction_attempted?: boolean;
     similarity_to_original: number;
     input_tokens: number;
     output_tokens: number;

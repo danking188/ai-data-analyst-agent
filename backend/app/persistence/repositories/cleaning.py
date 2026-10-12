@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.schemas import CleaningOperation
@@ -215,4 +216,11 @@ class CleaningPlanRepository:
             for position, operation in enumerate(operations)
         ]
         self.session.add_all(rows)
-        self.session.flush()
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            # operation_id is unique per plan; the request schema already rejects duplicates
+            # inside one payload, so this only fires on a concurrent write to the same plan.
+            # Surface it as a controlled conflict instead of an unhandled 500.
+            self.session.rollback()
+            raise state_conflict("清洗操作写入冲突，请重新加载计划后再试") from exc

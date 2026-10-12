@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
+import { formatScalar, StructuredValue } from "../../components/ui/StructuredValue";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useAppContext } from "../../context/AppContext";
 import { useJobPolling } from "../../hooks/useJobPolling";
@@ -22,12 +23,6 @@ const formats: Array<{ value: ReportExportInput["format"]; title: string; descri
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function displayValue(value: unknown) {
-  if (typeof value === "number") return value.toLocaleString("zh-CN", { maximumFractionDigits: 6 });
-  if (typeof value === "boolean") return value ? "是" : "否";
-  return String(value ?? "-").replaceAll("_", " ");
 }
 
 export function ReportPage() {
@@ -109,9 +104,9 @@ export function ReportPage() {
         {narrativeArtifact ? <section className="report-section ai-narrative"><header><div><Sparkles size={17} /><h2>AI 证据解读</h2></div><small>{String(asObject(narrativeArtifact.parameters).model ?? "-")} · {String(asObject(narrativeArtifact.parameters).prompt_version ?? narrativeArtifact.producer_version)}</small></header><p>{String(narrative.summary ?? "")}</p>{narrativeFindings.length ? <ol>{narrativeFindings.map((finding, index) => <li key={`${index}-${String(finding.text)}`}><p>{String(finding.text)}</p><div>{Array.isArray(finding.citation_ids) ? finding.citation_ids.map((citation) => <button key={String(citation)} onClick={() => openCitation(String(citation))}><Link2 size={12} />{String(citation)}</button>) : null}</div></li>)}</ol> : null}</section> : null}
         <section className="report-section"><h2>1. 经验证结论</h2>{publishableClaims.length ? <div className="claim-list">{publishableClaims.map((claim, index) => <button className={selectedClaim?.claim_id === claim.claim_id ? "is-selected" : ""} key={claim.claim_id} onClick={() => { setSelectedClaim(claim); setEvidenceOpen(true); }}><b>{index + 1}</b><StatusBadge status={claim.validation_status} /><span>{claim.text}<small>局限：{claim.limitations[0] ?? "无补充限制"}</small></span><em>证据 {claim.evidence_ids.length}</em><ChevronRight size={16} /></button>)}</div> : <EmptyState title="暂无通过验证的结论" description="验证失败或缺少证据的结论不会进入正式报告。" />}</section>
         <section className="report-section prose">
-          <h2>2. 数据概况</h2><table><tbody>{Object.entries(datasetOverview).map(([key, value]) => <tr key={key}><th>{key.replaceAll("_", " ")}</th><td>{displayValue(value)}</td></tr>)}</tbody></table>
-          <h2>3. 分析方法</h2><p>本次运行使用 {displayValue(modelResult.model_family)}，策略为 {displayValue(modelResult.strategy)}，目标字段为 {displayValue(modelResult.target)}。结果绑定运行、数据版本、随机种子及工具版本，可通过 Manifest 复核。</p>
-          <h2>4. 模型指标</h2>{Object.keys(modelMetrics).length ? <table><thead><tr><th>指标</th><th>值</th></tr></thead><tbody>{Object.entries(modelMetrics).map(([key, value]) => <tr key={key}><td>{key.toUpperCase().replaceAll("_", "-")}</td><td>{displayValue(value)}</td></tr>)}</tbody></table> : <p>当前运行没有模型指标 Artifact。</p>}
+          <h2>2. 数据概况</h2><table><tbody>{Object.entries(datasetOverview).map(([key, value]) => <tr key={key}><th>{key.replaceAll("_", " ")}</th><td><StructuredValue value={value} /></td></tr>)}</tbody></table>
+          <h2>3. 分析方法</h2><p>本次运行使用 {formatScalar(modelResult.model_family)}，策略为 {formatScalar(modelResult.strategy)}，目标字段为 {formatScalar(modelResult.target)}。结果绑定运行、数据版本、随机种子及工具版本，可通过 Manifest 复核。</p>
+          <h2>4. 模型指标</h2>{Object.keys(modelMetrics).length ? <table><thead><tr><th>指标</th><th>值</th></tr></thead><tbody>{Object.entries(modelMetrics).map(([key, value]) => <tr key={key}><td>{key.toUpperCase().replaceAll("_", "-")}</td><td><StructuredValue value={value} /></td></tr>)}</tbody></table> : <p>当前运行没有模型指标 Artifact。</p>}
           <h2>5. 分析产物</h2><ul>{artifacts.filter((artifact) => artifact.status === "ready").map((artifact) => <li key={artifact.artifact_id}>{artifact.name}（{artifact.type}，校验和 {artifact.checksum.slice(0, 20)}…）</li>)}</ul>
           <h2>6. 局限</h2>{limitations.length ? <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul> : <p>当前通过验证的结论没有额外局限说明。</p>}
         </section>

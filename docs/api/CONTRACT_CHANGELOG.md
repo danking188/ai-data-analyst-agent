@@ -16,6 +16,7 @@
 
 ### Added
 
+- `AssistantReplayCandidateResult` 增加 `correction_attempted: boolean`：轨迹回放候选在首次引用校验失败时，会像正常回答路径一样执行**一次**受控纠正并重新校验；该字段说明本次候选是否用到这次纠正。两次都不合格时 `validation_error` 同时给出初稿与纠正后的错误，`citation_valid=false`。校验通过时不会产生额外模型调用；单候选最多 2 次调用，`input_tokens`/`output_tokens`/`latency_ms` 为各次尝试之和。兼容性：Minor。
 - 新增 `PATCH /projects/{project_id}/assistant/tool-calls/{tool_call_id}`，用于在批准前编辑并重新校验受控工具参数。
 - `AssistantToolCall` 增加结构化 `arguments`、确定性 `result` 和结果资源链接。
 - Assistant 确认计划可通过现有 Worker 创建真实 AnalysisSpec、AnalysisRun、CleaningPlan、DatasetVersion 和特征建议 Artifact。
@@ -29,6 +30,9 @@
 ### Changed
 
 - `Artifact.run_id` 允许为 `null`，用于清洗预览、版本比较等不隶属于 AnalysisRun 的产物。
+- 明确 `CleaningOperation.operation_id` 的唯一性范围是**单个清洗计划内**，不同计划可以复用同一
+  标识符；此前数据库层面误用全局唯一约束，导致复用同一标识符的合法请求返回
+  `500 INTERNAL_ERROR`。请求与响应字段本身不变。
 - 兼容性：Patch。
 
 ### Frontend impact

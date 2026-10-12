@@ -542,6 +542,15 @@ dt {
   background: #eaf0fa;
 }
 
+.assistant-conversation-list h3 {
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .assistant-conversation-list strong {
   overflow: hidden;
   font-size: 13px;
@@ -2132,6 +2141,12 @@ tbody tr:hover {
   position: sticky;
   top: 0;
   background: #f6f8fb;
+}
+
+.artifact-structured h4 {
+  margin-bottom: 6px;
+  font-size: 11px;
+  text-transform: capitalize;
 }
 
 .overview-bars {

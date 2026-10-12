@@ -964,6 +964,7 @@ class AssistantReplayCandidateResult(BaseModel):
     answer: AssistantAnswer
     citation_valid: bool
     validation_error: str | None
+    correction_attempted: bool
     similarity_to_original: float = Field(ge=0, le=1)
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)

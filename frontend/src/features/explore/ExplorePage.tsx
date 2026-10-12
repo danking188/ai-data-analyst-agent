@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
+import { StructuredValue } from "../../components/ui/StructuredValue";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useAppContext } from "../../context/AppContext";
 import { useJobPolling } from "../../hooks/useJobPolling";
@@ -212,7 +213,15 @@ function formatValue(value: unknown) {
 function MetricArtifact({ artifact }: { artifact: Artifact }) {
   const result = asObject(artifact.result) ?? {};
   const metrics = asObject(result.metrics) ?? result;
-  return <div className="artifact-metrics">{Object.entries(metrics).filter(([, value]) => typeof value !== "object").map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{formatValue(value)}</strong></div>)}</div>;
+  const entries = Object.entries(metrics);
+  const scalars = entries.filter(([, value]) => typeof value !== "object");
+  // Nested metrics (for example confusion matrices) used to be dropped here; render them
+  // underneath the scalar cards instead of hiding them.
+  const nested = entries.filter(([, value]) => value !== null && typeof value === "object");
+  return <>
+    <div className="artifact-metrics">{scalars.map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{formatValue(value)}</strong></div>)}</div>
+    {nested.map(([key, value]) => <section className="artifact-structured" key={key}><h4>{key.replaceAll("_", " ")}</h4><StructuredValue value={value} /></section>)}
+  </>;
 }
 
 function ChartArtifact({ artifact }: { artifact: Artifact }) {

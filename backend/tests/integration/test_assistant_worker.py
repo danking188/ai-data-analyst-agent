@@ -187,6 +187,7 @@ def test_trace_compare_reuses_recorded_tool_results_without_side_effects(
     payload = response.json()
     assert payload["replay_mode"] == "counterfactual_no_tools"
     assert payload["candidates"][0]["citation_valid"] is True
+    assert payload["candidates"][0]["correction_attempted"] is False
     assert len(compare_provider.calls) == 1
 
     session = get_database().session()
